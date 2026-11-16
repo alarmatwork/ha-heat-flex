@@ -1,6 +1,6 @@
 name: Release
 
-# Creates a GitHub release (which HACS uses as the version) whenever the
+# Creates a GitHub release (which the Marketplace and HACS use as the version) whenever the
 # version in manifest.json changes on main.
 on:
   push:
