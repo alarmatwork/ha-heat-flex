@@ -5,6 +5,10 @@
     "frontend",
     "http"
   ],
+  "categories": [
+    "climate.thermostats_heating",
+    "energy.solar_batteries"
+  ],
   "codeowners": [
     "@alarmatwork"
   ],
