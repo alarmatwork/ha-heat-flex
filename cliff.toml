@@ -1,0 +1,62 @@
+# git-cliff configuration (https://git-cliff.org). CHANGELOG.md and the GitHub
+# release notes are generated from commit subjects: write them as the
+# sentence a user should read. Conventional prefixes (feat:, fix:, docs:)
+# are understood but not required; plain subjects are sorted by their first
+# word. Commits whose subject starts with "Release " are the version bumps
+# and are left out.
+
+[remote.github]
+owner = "alarmatwork"
+repo = "ha-solar-floor-boost"
+
+[changelog]
+header = """
+# Changelog
+
+What changed in each version of Solar Floor Boost. Generated from the
+commit history when a version is released; the same text is shown as the
+release notes in Home Assistant's Marketplace and HACS.
+
+"""
+body = """
+{%- if version %}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+{%- else %}
+## Unreleased
+{%- endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim | trim_end_matches(pat=".") | upper_first }}
+{%- endfor %}
+{% endfor %}
+{%- macro remote_url() -%}
+  https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}
+{%- endmacro -%}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+# The <!-- n --> prefixes only order the groups; striptags removes them.
+commit_parsers = [
+  { message = "^[Rr]elease \\d", skip = true },
+  { message = "^Merge ", skip = true },
+  { message = "^Changelog for", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^fix", group = "<!-- 1 -->Fixed" },
+  { message = "^docs", group = "<!-- 3 -->Documentation" },
+  { message = "^(chore|ci|build|test|refactor|style|perf)", group = "<!-- 4 -->Maintenance" },
+  { message = "^(Add|Ship|Suggest|New|Introduce|Support) ", group = "<!-- 0 -->Added" },
+  { message = "(?i)^(fix|restore|repair)|\\(fix", group = "<!-- 1 -->Fixed" },
+  { message = "(?i)^(README|Document|Docs)|screenshot", group = "<!-- 3 -->Documentation" },
+  { message = "(?i)workflow|hassfest|manifest keys|Node 24|validation", group = "<!-- 4 -->Maintenance" },
+  { message = ".*", group = "<!-- 2 -->Changed" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+topo_order = false
+sort_commits = "oldest"

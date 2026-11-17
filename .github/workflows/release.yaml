@@ -1,7 +1,10 @@
 name: Release
 
-# Creates a GitHub release (which the Marketplace and HACS use as the version) whenever the
-# version in manifest.json changes on main.
+# When the version in manifest.json changes on main: regenerate CHANGELOG.md
+# from the commit history (git-cliff, see cliff.toml), commit it, and publish
+# a GitHub release whose notes are that version's section. The Marketplace
+# and HACS show those notes in Home Assistant and use the release as the
+# version.
 on:
   push:
     branches: [main]
@@ -15,7 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Create release if version is new
+        with:
+          fetch-depth: 0 # full history and tags for the changelog
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install git-cliff==2.14.2
+      - name: Changelog and release if the version is new
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -23,6 +32,19 @@ jobs:
           tag="v${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag already released"
-          else
-            gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --generate-notes
+            exit 0
           fi
+          git-cliff --tag "$tag" -o CHANGELOG.md
+          # Release notes: this version's section without its own heading
+          # (Home Assistant adds the version above the notes).
+          git-cliff --tag "$tag" --latest --strip all \
+            | sed -e '/./,$!d' -e '1{/^## /d}' -e '2{/^$/d}' > notes.md
+          cat notes.md
+          if ! git diff --quiet CHANGELOG.md; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "Changelog for $tag"
+            git push origin HEAD:main
+          fi
+          gh release create "$tag" --target "$(git rev-parse HEAD)" --title "$tag" --notes-file notes.md

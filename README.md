@@ -261,8 +261,17 @@ pytest
 
 Bump `version` in `custom_components/solar_floor_boost/manifest.json` and
 `CARD_VERSION` in `frontend/solar-floor-boost-card.js` (a test checks they
-match) and push to `main`. The Release workflow tags `v<version>` and
-publishes a GitHub release, which the Marketplace and HACS offer as an update.
+match) and push to `main`. The Release workflow regenerates
+[CHANGELOG.md](CHANGELOG.md) from the commit history, commits it, and
+publishes a GitHub release `v<version>` whose notes are that version's
+section. The Marketplace and HACS offer the release as an update and show
+those notes in Home Assistant.
+
+Commit subjects are the changelog lines, so write each as the sentence a
+user should read ("Setback never goes below the thermostat's minimum").
+Conventional prefixes (`feat:`, `fix:`, `docs:`) sort a commit into Added,
+Fixed or Documentation; without one, the first word decides (see
+`cliff.toml`). Subjects starting with "Release " are left out.
 
 After an update, open dashboards notice that the running integration is
 newer than the card they loaded: a notice row with a **Reload** button
