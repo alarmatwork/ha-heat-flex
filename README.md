@@ -21,7 +21,12 @@ Temperatures follow your Home Assistant unit system: with Fahrenheit the
 amount is in °F (default 2 °F, whole degrees) and so are the limits (defaults
 82 °F and 59 °F).
 
-![Boost card with thermostats raised by 2 °C](docs/screenshot.png)
+![The card: Boost and Setback switches, shared Amount and Duration, and when the running mode ends](docs/card.png)
+
+A setback of 1 °C running for 2 h 30 m. The thermostats keep heating, just a
+degree lower, and go back to their own targets when it ends:
+
+![Two thermostat cards during a setback](docs/thermostats-setback.png)
 
 ## Installation
 
@@ -67,7 +72,7 @@ the device's area.
 
 ## Dashboard card
 
-The integration ships the card in the screenshot. Edit dashboard → **Add card**
+The integration ships the card shown above. Edit dashboard → **Add card**
 → **By card** (or **Browse all cards**) → **Solar Floor Boost**. On Home
 Assistant 2026.6+ it is also suggested under **By entity** (Community section)
 when you pick any Solar Floor Boost entity. The ⓘ next to each switch explains
