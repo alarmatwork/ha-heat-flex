@@ -17,15 +17,13 @@ temperature, ...).
 
 [![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alarmatwork&repository=ha-solar-floor-boost&category=integration)
 
-Settings → **Marketplace** → search for **Solar Floor Boost**, or click the
-badge above. Until the integration is listed in the catalog, the badge adds the
-repository for you (**Add from link**). Install it, then restart Home Assistant.
+Settings → **Marketplace** → search for **Solar Floor Boost** (or click the
+badge above). Install it, then restart Home Assistant.
 
 ### HACS (Home Assistant 2026.10 or older)
 
-The badge above also works in HACS. Or: HACS → ⋮ → **Custom repositories** → add
-`https://github.com/alarmatwork/ha-solar-floor-boost`, type **Integration**.
-Install **Solar Floor Boost**, then restart Home Assistant.
+HACS → search for **Solar Floor Boost** (or click the badge above). Install
+it, then restart Home Assistant.
 
 ### Manual
 
