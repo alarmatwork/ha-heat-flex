@@ -46,16 +46,13 @@ from .const import (
     CONF_CLIMATES,
     CONF_MAX_TEMPERATURE,
     CONF_MIN_TEMPERATURE,
-    DEFAULT_DELTA,
     DEFAULT_DURATION,
-    DEFAULT_MAX_TEMPERATURE,
-    DEFAULT_MIN_TEMPERATURE,
-    DEFAULT_TEMP_STEP,
     DOMAIN,
     MODE_BOOST,
     MODE_SETBACK,
     STORAGE_VERSION,
 )
+from .units import temperature_units
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,12 +91,12 @@ class BoostManager:
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )
+        # Everything in temperature is in the system unit (°C or °F).
+        self.units = temperature_units(hass)
         # Defaults used when a start request doesn't specify them; driven by
-        # the number entities.
-        self.delta: float = DEFAULT_DELTA
+        # the number entities and shared by boost and setback.
+        self.delta: float = self.units.delta
         self.duration: float = DEFAULT_DURATION
-        self.setback_delta: float = DEFAULT_DELTA
-        self.setback_duration: float = DEFAULT_DURATION
         # Current session. ``mode`` stays set after the end while thermostats
         # are still waiting to be restored, so they are reported under it.
         self.mode: str | None = None
@@ -120,13 +117,13 @@ class BoostManager:
     @property
     def max_temperature(self) -> float:
         return float(
-            self.entry.options.get(CONF_MAX_TEMPERATURE, DEFAULT_MAX_TEMPERATURE)
+            self.entry.options.get(CONF_MAX_TEMPERATURE, self.units.max_temperature)
         )
 
     @property
     def min_temperature(self) -> float:
         return float(
-            self.entry.options.get(CONF_MIN_TEMPERATURE, DEFAULT_MIN_TEMPERATURE)
+            self.entry.options.get(CONF_MIN_TEMPERATURE, self.units.min_temperature)
         )
 
     @property
@@ -142,12 +139,6 @@ class BoostManager:
         """Thermostats whose session has ended but couldn't be restored yet."""
         return [] if self.is_active else list(self.boosted)
 
-    def default_delta(self, mode: str) -> float:
-        return self.setback_delta if mode == MODE_SETBACK else self.delta
-
-    def default_duration(self, mode: str) -> float:
-        return self.setback_duration if mode == MODE_SETBACK else self.duration
-
     @callback
     def async_add_listener(self, update_callback: CALLBACK_TYPE) -> Callable[[], None]:
         self._listeners.add(update_callback)
@@ -160,7 +151,7 @@ class BoostManager:
 
     @callback
     def async_set_default(self, key: str, value: float) -> None:
-        """Set a default (``delta``, ``setback_duration``, ...); entities showing it update."""
+        """Set the default ``delta`` or ``duration``; every entity showing it updates."""
         setattr(self, key, value)
         self._notify()
 
@@ -216,15 +207,15 @@ class BoostManager:
         entity_ids: list[str] | None = None,
         mode: str = MODE_BOOST,
     ) -> None:
-        """Move targets by ``delta`` °C for ``duration`` minutes.
+        """Move targets by ``delta`` degrees for ``duration`` minutes.
 
         A boost raises them, a setback lowers them. If the same mode is already
         running, the new delta is applied to the original baselines (not
         stacked) and the end time is reset to now + duration. If the other mode
         is running, it is ended first and its thermostats restored.
         """
-        delta = self.default_delta(mode) if delta is None else delta
-        duration = self.default_duration(mode) if duration is None else duration
+        delta = self.delta if delta is None else delta
+        duration = self.duration if duration is None else duration
         entity_ids = entity_ids or self.climate_entities
 
         async with self._lock:
@@ -252,10 +243,11 @@ class BoostManager:
             self._update_pending_tracking()
             await self._async_save()
         _LOGGER.info(
-            "%s %s%s°C until %s for %s",
+            "%s %s%s%s until %s for %s",
             mode.capitalize(),
             "-" if mode == MODE_SETBACK else "+",
             delta,
+            self.units.unit,
             dt_util.as_local(self.ends_at),
             list(self.boosted),
         )
@@ -349,7 +341,7 @@ class BoostManager:
         ``max_temp``; a setback is floored at the configured minimum and the
         thermostat's ``min_temp``.
         """
-        step = float(state.attributes.get(ATTR_TARGET_TEMP_STEP) or DEFAULT_TEMP_STEP)
+        step = float(state.attributes.get(ATTR_TARGET_TEMP_STEP) or self.units.temp_step)
         if mode == MODE_SETBACK:
             target = round(round((baseline - delta) / step) * step, 2)
             floor = self.min_temperature

@@ -3,15 +3,16 @@
 
 const DOMAIN = "solar_floor_boost";
 
-// translation_key -> [default entity_id, row name]
+// translation_key -> [default entity_id, row name]. Amount and duration are
+// shared by both modes (installs from before 1.7.1 have them as
+// number.solar_floor_boost_boost_amount/_boost_duration; the registry lookup
+// below finds them either way).
 const ROWS = {
   boost: ["switch.solar_floor_boost_boost", "Boost"],
-  delta: ["number.solar_floor_boost_boost_amount", "Boost amount"],
-  duration: ["number.solar_floor_boost_boost_duration", "Boost duration"],
-  boost_end: ["sensor.solar_floor_boost_boost_ends", "Boost ends"],
   setback: ["switch.solar_floor_boost_setback", "Setback"],
-  setback_delta: ["number.solar_floor_boost_setback_amount", "Setback amount"],
-  setback_duration: ["number.solar_floor_boost_setback_duration", "Setback duration"],
+  delta: ["number.solar_floor_boost_amount", "Amount"],
+  duration: ["number.solar_floor_boost_duration", "Duration"],
+  boost_end: ["sensor.solar_floor_boost_boost_ends", "Boost ends"],
   setback_end: ["sensor.solar_floor_boost_setback_ends", "Setback ends"],
 };
 
@@ -46,31 +47,26 @@ function findEntities(hass) {
   return ids;
 }
 
-// The rows of one mode: switch with hint, amount, duration, "ends" while on.
-function modeRows(config, ids, mode, deltaKey, durationKey, endKey) {
-  return [
-    {
-      type: "custom:solar-floor-boost-switch-row",
-      entity: ids[mode],
-      name: ROWS[mode][1],
-      hint: HINTS[mode],
+function switchRow(ids, mode) {
+  return {
+    type: "custom:solar-floor-boost-switch-row",
+    entity: ids[mode],
+    name: ROWS[mode][1],
+    hint: HINTS[mode],
+  };
+}
+
+// "Boost ends" / "Setback ends", only while that mode runs.
+function endsRow(config, ids, mode, endKey) {
+  return {
+    type: "conditional",
+    conditions: [{ entity: ids[mode], state: "on" }],
+    row: {
+      entity: ids[endKey],
+      name: ROWS[endKey][1],
+      format: config.end_format ?? "relative",
     },
-    { entity: ids[deltaKey], name: ROWS[deltaKey][1] },
-    {
-      type: "custom:solar-floor-boost-duration-row",
-      entity: ids[durationKey],
-      name: ROWS[durationKey][1],
-    },
-    {
-      type: "conditional",
-      conditions: [{ entity: ids[mode], state: "on" }],
-      row: {
-        entity: ids[endKey],
-        name: ROWS[endKey][1],
-        format: config.end_format ?? "relative",
-      },
-    },
-  ];
+  };
 }
 
 function entitiesCardConfig(config, ids) {
@@ -79,9 +75,16 @@ function entitiesCardConfig(config, ids) {
     title: config.title ?? "Floor heating",
     show_header_toggle: false,
     entities: [
-      ...modeRows(config, ids, "boost", "delta", "duration", "boost_end"),
-      { type: "divider" },
-      ...modeRows(config, ids, "setback", "setback_delta", "setback_duration", "setback_end"),
+      switchRow(ids, "boost"),
+      switchRow(ids, "setback"),
+      { entity: ids.delta, name: ROWS.delta[1] },
+      {
+        type: "custom:solar-floor-boost-duration-row",
+        entity: ids.duration,
+        name: ROWS.duration[1],
+      },
+      endsRow(config, ids, "boost", "boost_end"),
+      endsRow(config, ids, "setback", "setback_end"),
     ],
   };
 }
@@ -128,7 +131,7 @@ class SolarFloorBoostCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 8;
+    return 6;
   }
 
   getGridOptions() {

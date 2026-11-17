@@ -22,7 +22,7 @@ conditions:
     entity_id: sensor.electricity_price
     above: 0.30
 actions:
-  # Amount comes from the integration's "Setback amount" setting; all
+  # Amount comes from the integration's "Amount" setting; all
   # configured thermostats are set back. A running boost is ended first.
   - action: solar_floor_boost.start_setback
     data:

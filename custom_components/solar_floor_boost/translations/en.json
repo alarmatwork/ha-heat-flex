@@ -10,8 +10,8 @@
           "min_temperature": "Minimum setback target"
         },
         "data_description": {
-          "max_temperature": "A boost never sets a target above this value.",
-          "min_temperature": "A setback never sets a target below this value."
+          "max_temperature": "A boost never sets a target above this value (in your temperature unit).",
+          "min_temperature": "A setback never sets a target below this value (in your temperature unit)."
         }
       }
     },
@@ -29,8 +29,8 @@
           "min_temperature": "Minimum setback target"
         },
         "data_description": {
-          "max_temperature": "A boost never sets a target above this value.",
-          "min_temperature": "A setback never sets a target below this value."
+          "max_temperature": "A boost never sets a target above this value (in your temperature unit).",
+          "min_temperature": "A setback never sets a target below this value (in your temperature unit)."
         }
       }
     }
@@ -38,16 +38,10 @@
   "entity": {
     "number": {
       "delta": {
-        "name": "Boost amount"
+        "name": "Amount"
       },
       "duration": {
-        "name": "Boost duration"
-      },
-      "setback_delta": {
-        "name": "Setback amount"
-      },
-      "setback_duration": {
-        "name": "Setback duration"
+        "name": "Duration"
       }
     },
     "sensor": {
@@ -79,11 +73,11 @@
       "fields": {
         "delta": {
           "name": "Amount",
-          "description": "Degrees to add to each target. Defaults to the Boost amount entity."
+          "description": "Degrees to add to each target, in your temperature unit. Defaults to the Amount entity."
         },
         "duration": {
           "name": "Duration",
-          "description": "Minutes until targets are restored. Defaults to the Boost duration entity."
+          "description": "Minutes until targets are restored. Defaults to the Duration entity."
         },
         "climate_entities": {
           "name": "Thermostats",
@@ -101,11 +95,11 @@
       "fields": {
         "delta": {
           "name": "Amount",
-          "description": "Degrees to subtract from each target. Defaults to the Setback amount entity."
+          "description": "Degrees to subtract from each target, in your temperature unit. Defaults to the Amount entity."
         },
         "duration": {
           "name": "Duration",
-          "description": "Minutes until targets are restored. Defaults to the Setback duration entity."
+          "description": "Minutes until targets are restored. Defaults to the Duration entity."
         },
         "climate_entities": {
           "name": "Thermostats",

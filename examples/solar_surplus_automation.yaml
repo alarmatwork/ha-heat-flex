@@ -38,7 +38,7 @@ conditions:
     attribute: temperature
     below: 20
 actions:
-  # Amount comes from the integration's "Boost amount" setting; all
+  # Amount comes from the integration's "Amount" setting; all
   # configured thermostats are boosted.
   - action: solar_floor_boost.start
     data:

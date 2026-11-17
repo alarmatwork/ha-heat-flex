@@ -5,9 +5,8 @@ start:
       selector:
         number:
           min: 0.5
-          max: 5
+          max: 10
           step: 0.5
-          unit_of_measurement: "°C"
           mode: slider
     duration:
       example: 120
@@ -31,9 +30,8 @@ start_setback:
       selector:
         number:
           min: 0.5
-          max: 5
+          max: 10
           step: 0.5
-          unit_of_measurement: "°C"
           mode: slider
     duration:
       example: 120

@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import voluptuous as vol
+
 from freezegun.api import FrozenDateTimeFactory
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry, async_fire_time_changed,
@@ -9,6 +11,7 @@ from homeassistant.setup import async_setup_component
 
 DOMAIN = "solar_floor_boost"
 A, B, OFF = "climate.bedroom", "climate.kitchen", "climate.garage"
+AMOUNT, DURATION = "number.solar_floor_boost_amount", "number.solar_floor_boost_duration"
 
 
 async def _setup(hass: HomeAssistant):
@@ -39,8 +42,8 @@ def t(hass, eid):
 
 async def test_switch_boost_and_restore(hass: HomeAssistant, freezer: FrozenDateTimeFactory):
     entry, calls = await _setup(hass)
-    assert hass.states.get("number.solar_floor_boost_boost_amount").state == "1.0"
-    assert hass.states.get("number.solar_floor_boost_boost_duration").state == "2.0"
+    assert hass.states.get(AMOUNT).state == "1.0"
+    assert hass.states.get(DURATION).state == "2.0"
     await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.solar_floor_boost_boost"}, blocking=True)
     assert t(hass, A) == 23.0
     assert t(hass, B) == 28.0  # capped by max_temperature
@@ -155,7 +158,7 @@ async def test_duration_15_minutes(hass: HomeAssistant, freezer):
     entry, calls = await _setup(hass)
     await hass.services.async_call(
         "number", "set_value",
-        {"entity_id": "number.solar_floor_boost_boost_duration", "value": 0.25}, blocking=True,
+        {"entity_id": DURATION, "value": 0.25}, blocking=True,
     )
     await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.solar_floor_boost_boost"}, blocking=True)
     assert t(hass, A) == 23.0
@@ -183,7 +186,7 @@ async def test_upgrade_from_1_4_0(hass: HomeAssistant):
     registry.async_get_or_create("select", DOMAIN, f"{entry.entry_id}_duration", config_entry=entry)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert registry.async_get_entity_id("select", DOMAIN, f"{entry.entry_id}_duration") is None
     assert registry.async_get(number.entity_id).hidden_by is None
     assert hass.states.get(number.entity_id).state == "2.0"
@@ -211,12 +214,12 @@ async def test_duration_number_in_hours(hass: HomeAssistant):
     from homeassistant.helpers import entity_registry as er
 
     await _setup(hass)
-    entity_id = "number.solar_floor_boost_boost_duration"
+    entity_id = DURATION
     assert er.async_get(hass).async_get(entity_id).hidden_by is None
     state = hass.states.get(entity_id)
     assert (state.attributes["min"], state.attributes["max"], state.attributes["step"]) == (0.25, 12, 0.25)
     assert state.attributes["unit_of_measurement"] == "h"
-    assert hass.states.get("select.solar_floor_boost_boost_duration") is None
+    assert hass.states.get("select.solar_floor_boost_duration") is None
 
 
 async def test_restore_duration_saved_in_minutes(hass: HomeAssistant, freezer):
@@ -225,12 +228,12 @@ async def test_restore_duration_saved_in_minutes(hass: HomeAssistant, freezer):
     from pytest_homeassistant_custom_component.common import mock_restore_cache_with_extra_data
 
     mock_restore_cache_with_extra_data(hass, [
-        (State("number.solar_floor_boost_boost_duration", "90"),
+        (State(DURATION, "90"),
          {"native_max_value": 720, "native_min_value": 15, "native_step": 15,
           "native_unit_of_measurement": "min", "native_value": 90}),
     ])
     entry, calls = await _setup(hass)
-    assert hass.states.get("number.solar_floor_boost_boost_duration").state == "1.5"
+    assert hass.states.get(DURATION).state == "1.5"
     await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.solar_floor_boost_boost"}, blocking=True)
     freezer.tick(timedelta(minutes=91))
     async_fire_time_changed(hass)
@@ -246,8 +249,6 @@ BOOST = "switch.solar_floor_boost_boost"
 
 async def test_switch_setback_and_restore(hass: HomeAssistant, freezer: FrozenDateTimeFactory):
     entry, calls = await _setup(hass)
-    assert hass.states.get("number.solar_floor_boost_setback_amount").state == "1.0"
-    assert hass.states.get("number.solar_floor_boost_setback_duration").state == "2.0"
     hass.states.async_set(A, "heat", {"temperature": 15.5, "target_temp_step": 0.5, "min_temp": 7})
     hass.states.async_set(B, "heat", {"temperature": 22.0, "min_temp": 21.5})
     await hass.services.async_call("switch", "turn_on", {"entity_id": SETBACK}, blocking=True)
@@ -368,3 +369,112 @@ async def test_failed_setback_still_ends_boost(hass: HomeAssistant):
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(BOOST).state == "off"
+
+
+async def test_upgrade_from_1_7_0_removes_setback_numbers(hass: HomeAssistant):
+    """1.7.0 had its own setback amount/duration; both modes share one pair now."""
+    from homeassistant.helpers import entity_registry as er
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Solar Floor Boost", minor_version=3,
+        options={"climate_entities": [], "max_temperature": 28},
+    )
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    for key in ("setback_delta", "setback_duration"):
+        registry.async_get_or_create("number", DOMAIN, f"{entry.entry_id}_{key}", config_entry=entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == 4
+    for key in ("setback_delta", "setback_duration"):
+        assert registry.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_{key}") is None
+    assert hass.states.get(AMOUNT).state == "1.0"
+
+
+async def test_shared_amount_and_duration(hass: HomeAssistant, freezer):
+    entry, calls = await _setup(hass)
+    await hass.services.async_call("number", "set_value", {"entity_id": AMOUNT, "value": 2}, blocking=True)
+    await hass.services.async_call("number", "set_value", {"entity_id": DURATION, "value": 0.5}, blocking=True)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": SETBACK}, blocking=True)
+    assert t(hass, A) == 20.0
+    freezer.tick(timedelta(minutes=31))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert t(hass, A) == 22.0 and hass.states.get(SETBACK).state == "off"
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True)
+    assert t(hass, A) == 24.0
+
+
+# --- Fahrenheit ------------------------------------------------------------
+
+async def _setup_f(hass: HomeAssistant, options=None):
+    from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
+
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    hass.states.async_set(A, "heat", {"temperature": 72.0, "target_temp_step": 1, "max_temp": 95, "min_temp": 45})
+    hass.states.async_set(B, "heat", {"temperature": 81.0, "max_temp": 95, "min_temp": 45})
+    calls = []
+
+    async def set_temp(call: ServiceCall):
+        eid = call.data["entity_id"]
+        eid = eid[0] if isinstance(eid, list) else eid
+        calls.append((eid, call.data["temperature"]))
+        st = hass.states.get(eid)
+        hass.states.async_set(eid, st.state, {**st.attributes, "temperature": call.data["temperature"]})
+
+    entry = MockConfigEntry(domain=DOMAIN, title="Solar Floor Boost", options=options or {"climate_entities": [A, B]})
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, "climate", {})
+    hass.services.async_register("climate", "set_temperature", set_temp)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry, calls
+
+
+async def test_fahrenheit_defaults_and_limits(hass: HomeAssistant, freezer):
+    entry, calls = await _setup_f(hass)
+    amount = hass.states.get(AMOUNT)
+    assert amount.state == "2.0" and amount.attributes["unit_of_measurement"] == "°F"
+    assert (amount.attributes["min"], amount.attributes["max"], amount.attributes["step"]) == (1, 10, 1)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True)
+    assert t(hass, A) == 74.0
+    assert t(hass, B) == 82.0  # default cap 82 °F
+    await hass.services.async_call(DOMAIN, "start_setback", {"delta": 15}, blocking=True)
+    assert t(hass, A) == 59.0  # default floor 59 °F
+    assert t(hass, B) == 66.0
+    await hass.services.async_call(DOMAIN, "stop_setback", {}, blocking=True)
+    assert t(hass, A) == 72.0 and t(hass, B) == 81.0
+
+
+async def test_fahrenheit_rounds_to_whole_degrees(hass: HomeAssistant):
+    entry, calls = await _setup_f(hass)
+    hass.states.async_set(B, "heat", {"temperature": 70.0, "max_temp": 95})  # no step attribute
+    await hass.services.async_call(DOMAIN, "start", {"delta": 1.4, "climate_entities": [B]}, blocking=True)
+    assert t(hass, B) == 71.0
+
+
+async def test_fahrenheit_config_flow(hass: HomeAssistant):
+    from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
+
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    hass.states.async_set(A, "heat", {"temperature": 72.0})
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    schema = result["data_schema"].schema
+    defaults = {str(k): k.default() for k in schema if k.default is not vol.UNDEFINED}
+    assert defaults == {"max_temperature": 82, "min_temperature": 59}
+    limit = next(v for k, v in schema.items() if str(k) == "max_temperature")
+    assert limit.config["unit_of_measurement"] == "°F" and limit.config["max"] == 95
+
+
+async def test_amount_restored_after_unit_change(hass: HomeAssistant):
+    """A 1 °C amount saved on a metric system comes back as 2 °F."""
+    from homeassistant.core import State
+    from pytest_homeassistant_custom_component.common import mock_restore_cache_with_extra_data
+
+    mock_restore_cache_with_extra_data(hass, [
+        (State(AMOUNT, "1.0"),
+         {"native_max_value": 5, "native_min_value": 0.5, "native_step": 0.5,
+          "native_unit_of_measurement": "°C", "native_value": 1.0}),
+    ])
+    await _setup_f(hass)
+    assert hass.states.get(AMOUNT).state == "2.0"

@@ -12,9 +12,14 @@ one back to the target it had before.
   or a grid alert. Lower every thermostat by 1 °C for 2 hours and let the floor
   coast.
 
-Only one of the two runs at a time; starting one ends the other. Control them
-from the UI, or start them from automations with your own conditions (battery
-level, PV power, electricity price, outdoor temperature, ...).
+Both use the same **Amount** and **Duration** settings. Only one of the two
+runs at a time; starting one ends the other. Control them from the UI, or
+start them from automations with your own conditions (battery level, PV
+power, electricity price, outdoor temperature, ...).
+
+Temperatures follow your Home Assistant unit system: with Fahrenheit the
+amount is in °F (default 2 °F, whole degrees) and so are the limits (defaults
+82 °F and 59 °F).
 
 ![Boost card with thermostats raised by 2 °C](docs/screenshot.png)
 
@@ -48,23 +53,25 @@ later via **Configure**.
 
 | Entity | Purpose |
 | --- | --- |
-| `switch.solar_floor_boost_boost` | On starts a boost with the values below; off stops it and restores the original targets. Turning it on during a setback ends the setback. |
-| `number.solar_floor_boost_boost_amount` | Degrees to add (default 1 °C). |
-| `number.solar_floor_boost_boost_duration` | Hours in 15-minute steps, shown as "4h 45m" (default 2h, max 12h). The dashboard card shows it as a preset slider: 15m, 30m, 45m, 1h, 1h 30m, 2h, 2h 30m, 3h, 3h 30m, 4h, 5h, 6h, 8h, 12h. Up to 1.5.x this entity was in minutes. |
+| `switch.solar_floor_boost_boost` | On starts a boost with the amount and duration below; off stops it and restores the original targets. Turning it on during a setback ends the setback. |
+| `switch.solar_floor_boost_setback` | On starts a setback with the same amount and duration; off stops it and restores the original targets. Turning it on during a boost ends the boost. |
+| `number.solar_floor_boost_amount` | Degrees to add (boost) or subtract (setback): default 1 °C in 0.5 steps, or 2 °F in whole degrees. |
+| `number.solar_floor_boost_duration` | Hours in 15-minute steps, shown as "4h 45m" (default 2h, max 12h). The dashboard card shows it as a preset slider: 15m, 30m, 45m, 1h, 1h 30m, 2h, 2h 30m, 3h, 3h 30m, 4h, 5h, 6h, 8h, 12h. Up to 1.5.x this entity was in minutes. |
 | `sensor.solar_floor_boost_boost_ends` | When the boost ends. Attributes list each thermostat's original (`baseline`) and boosted (`target`) value. |
-| `switch.solar_floor_boost_setback` | On starts a setback with the values below; off stops it and restores the original targets. Turning it on during a boost ends the boost. |
-| `number.solar_floor_boost_setback_amount` | Degrees to subtract (default 1 °C). |
-| `number.solar_floor_boost_setback_duration` | Same as the boost duration (default 2h, max 12h). |
 | `sensor.solar_floor_boost_setback_ends` | When the setback ends. Attributes list each thermostat's original (`baseline`) and lowered (`target`) value. |
+
+Installs made before 1.7.1 keep their old entity IDs,
+`number.solar_floor_boost_boost_amount` and `..._boost_duration`; only the
+names changed. Home Assistant 2026.11+ may also prefix new entity IDs with
+the device's area.
 
 ## Dashboard card
 
 The integration ships the card in the screenshot. Edit dashboard → **Add card**
 → **By card** (or **Browse all cards**) → **Solar Floor Boost**. On Home
 Assistant 2026.6+ it is also suggested under **By entity** (Community section)
-when you pick any Solar Floor Boost entity. The card has a Boost section and a
-Setback section; the ⓘ next to each switch explains when to use it (hover, or
-tap on a phone).
+when you pick any Solar Floor Boost entity. The ⓘ next to each switch explains
+when to use that mode (hover, or tap on a phone).
 
 ```yaml
 type: custom:solar-floor-boost-card
@@ -83,11 +90,15 @@ entities:
     entity: switch.solar_floor_boost_boost
     name: Boost
     hint: Use when the battery is full or electricity is cheap.
-  - entity: number.solar_floor_boost_boost_amount
-    name: Boost amount
+  - type: custom:solar-floor-boost-switch-row
+    entity: switch.solar_floor_boost_setback
+    name: Setback
+    hint: Use when electricity is expensive or the battery is low.
+  - entity: number.solar_floor_boost_amount
+    name: Amount
   - type: custom:solar-floor-boost-duration-row  # preset slider (15m … 12h)
-    entity: number.solar_floor_boost_boost_duration
-    name: Boost duration
+    entity: number.solar_floor_boost_duration
+    name: Duration
   - type: conditional
     conditions:
       - entity: switch.solar_floor_boost_boost
@@ -96,16 +107,6 @@ entities:
       entity: sensor.solar_floor_boost_boost_ends
       name: Boost ends
       format: relative
-  - type: divider
-  - type: custom:solar-floor-boost-switch-row
-    entity: switch.solar_floor_boost_setback
-    name: Setback
-    hint: Use when electricity is expensive or the battery is low.
-  - entity: number.solar_floor_boost_setback_amount
-    name: Setback amount
-  - type: custom:solar-floor-boost-duration-row
-    entity: number.solar_floor_boost_setback_duration
-    name: Setback duration
   - type: conditional
     conditions:
       - entity: switch.solar_floor_boost_setback
@@ -121,8 +122,8 @@ entities:
 ```yaml
 action: solar_floor_boost.start
 data:
-  delta: 2          # optional, defaults to Boost amount
-  duration: 120     # minutes (any value), optional, defaults to Boost duration
+  delta: 2          # degrees in your unit, optional, defaults to Amount
+  duration: 120     # minutes (any value), optional, defaults to Duration
   climate_entities: # optional, defaults to all configured thermostats
     - climate.living_room
 ```
@@ -136,8 +137,8 @@ The setback actions take the same fields:
 ```yaml
 action: solar_floor_boost.start_setback
 data:
-  delta: 2          # optional, defaults to Setback amount
-  duration: 60      # minutes (any value), optional, defaults to Setback duration
+  delta: 2          # degrees in your unit, optional, defaults to Amount
+  duration: 60      # minutes (any value), optional, defaults to Duration
   climate_entities: # optional, defaults to all configured thermostats
     - climate.living_room
 ```
@@ -165,7 +166,7 @@ boosts all configured thermostats for 2 hours when all of these are true:
 
 It checks when the battery has been above 90 % for 5 minutes and every 10
 minutes after that, so while the conditions hold a new boost starts after each
-one ends. The amount comes from the **Boost amount** entity; add `delta: 2`
+one ends. The amount comes from the **Amount** entity; add `delta: 2`
 under `duration` to fix it in the automation instead.
 
 ### Solar forecast (optional, recommended)
@@ -217,8 +218,8 @@ lowers all configured thermostats for 1 hour whenever the electricity price is
 above a limit, re-checking every 10 minutes so the setback continues for as
 long as the price stays high. Replace `sensor.electricity_price` with your
 price sensor (for example from the Nord Pool, Tibber or ENTSO-e integrations)
-and `0.30` with your limit in its unit. The amount comes from the **Setback
-amount** entity; add `delta: 2` under `duration` to fix it in the automation.
+and `0.30` with your limit in its unit. The amount comes from the **Amount**
+entity; add `delta: 2` under `duration` to fix it in the automation.
 
 ## Behaviour
 
@@ -239,9 +240,13 @@ moves the targets down instead of up.
   Thermostats that are **unavailable** at start are skipped. One that
   is unavailable when the boost ends is restored as soon as it comes back
   (listed in the sensor's `pending_restore` attribute).
-- The boosted target is rounded to the thermostat's temperature step and capped
-  at the configured maximum and the thermostat's own `max_temp`. A setback
-  target is floored at the configured minimum and the thermostat's `min_temp`.
+- The boosted target is rounded to the thermostat's temperature step (0.5 °C
+  or 1 °F if the thermostat doesn't report one) and capped at the configured
+  maximum and the thermostat's own `max_temp`. A setback target is floored at
+  the configured minimum and the thermostat's `min_temp`.
+- Amount and limits are in the system's temperature unit. If you switch the
+  unit system later, the saved amount is converted; re-check the two limits
+  under **Configure**.
 - Removing the integration restores all thermostats.
 
 ## Development

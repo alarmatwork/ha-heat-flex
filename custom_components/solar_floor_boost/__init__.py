@@ -42,8 +42,9 @@ CARD_PATH = Path(__file__).parent / "frontend" / "solar-floor-boost-card.js"
 
 START_SCHEMA = vol.Schema(
     {
+        # In the system's temperature unit: up to 10 °C or 18 °F.
         vol.Optional(ATTR_DELTA): vol.All(
-            vol.Coerce(float), vol.Range(min=0.1, max=10)
+            vol.Coerce(float), vol.Range(min=0.1, max=18)
         ),
         vol.Optional(ATTR_DURATION): vol.All(
             vol.Coerce(float), vol.Range(min=1, max=1440)
@@ -139,6 +140,16 @@ async def async_migrate_entry(
         ) and registry.async_get(number).hidden_by is er.RegistryEntryHider.INTEGRATION:
             registry.async_update_entity(number, hidden_by=None)
         hass.config_entries.async_update_entry(entry, minor_version=3)
+    if entry.version == 1 and entry.minor_version < 4:
+        # 1.7.0 had separate setback amount/duration numbers; the boost ones
+        # are shared by both modes now.
+        registry = er.async_get(hass)
+        for key in ("setback_delta", "setback_duration"):
+            if entity_id := registry.async_get_entity_id(
+                Platform.NUMBER, DOMAIN, f"{entry.entry_id}_{key}"
+            ):
+                registry.async_remove(entity_id)
+        hass.config_entries.async_update_entry(entry, minor_version=4)
     return True
 
 

@@ -11,11 +11,8 @@ MODE_BOOST = "boost"
 MODE_SETBACK = "setback"
 MODES = (MODE_BOOST, MODE_SETBACK)
 
-DEFAULT_DELTA = 1.0  # °C
 DEFAULT_DURATION = 120  # minutes
-DEFAULT_MAX_TEMPERATURE = 28.0  # °C, safety cap for any boosted target
-DEFAULT_MIN_TEMPERATURE = 15.0  # °C, safety floor for any setback target
-DEFAULT_TEMP_STEP = 0.5
+# Temperature defaults live in units.py: they depend on the system unit.
 
 ATTR_DELTA = "delta"
 ATTR_DURATION = "duration"
