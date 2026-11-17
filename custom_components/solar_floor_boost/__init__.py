@@ -1,4 +1,4 @@
-"""Solar Floor Boost: temporarily raise thermostat targets to store surplus solar as heat."""
+"""Solar Floor Boost: temporarily raise (boost) or lower (setback) thermostat targets."""
 
 from __future__ import annotations
 
@@ -24,8 +24,12 @@ from .const import (
     ATTR_DELTA,
     ATTR_DURATION,
     DOMAIN,
+    MODE_BOOST,
+    MODE_SETBACK,
     SERVICE_START,
+    SERVICE_START_SETBACK,
     SERVICE_STOP,
+    SERVICE_STOP_SETBACK,
 )
 
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
@@ -60,18 +64,31 @@ def _get_manager(hass: HomeAssistant) -> BoostManager:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    async def start(call: ServiceCall) -> None:
-        await _get_manager(hass).async_start(
-            delta=call.data.get(ATTR_DELTA),
-            duration=call.data.get(ATTR_DURATION),
-            entity_ids=call.data.get(ATTR_CLIMATE_ENTITIES),
+    def start(mode: str):
+        async def handler(call: ServiceCall) -> None:
+            await _get_manager(hass).async_start(
+                delta=call.data.get(ATTR_DELTA),
+                duration=call.data.get(ATTR_DURATION),
+                entity_ids=call.data.get(ATTR_CLIMATE_ENTITIES),
+                mode=mode,
+            )
+
+        return handler
+
+    def stop(mode: str):
+        async def handler(call: ServiceCall) -> None:
+            await _get_manager(hass).async_stop(mode)
+
+        return handler
+
+    for mode, start_service, stop_service in (
+        (MODE_BOOST, SERVICE_START, SERVICE_STOP),
+        (MODE_SETBACK, SERVICE_START_SETBACK, SERVICE_STOP_SETBACK),
+    ):
+        hass.services.async_register(
+            DOMAIN, start_service, start(mode), schema=START_SCHEMA
         )
-
-    async def stop(call: ServiceCall) -> None:
-        await _get_manager(hass).async_stop()
-
-    hass.services.async_register(DOMAIN, SERVICE_START, start, schema=START_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_STOP, stop)
+        hass.services.async_register(DOMAIN, stop_service, stop(mode))
     await _async_register_card(hass)
     return True
 

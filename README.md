@@ -1,13 +1,20 @@
 # Solar Floor Boost
 
-A Home Assistant integration that temporarily raises the target temperature of
-selected thermostats, then puts each one back to the target it had before.
+A Home Assistant integration that temporarily raises (**Boost**) or lowers
+(**Setback**) the target temperature of selected thermostats, then puts each
+one back to the target it had before.
 
-Typical use: your home battery is full and the sun is still producing. Instead
-of exporting the surplus, store it as heat in floor heating by raising every
-thermostat by 1 °C for 2 hours. Control it from the UI, or start it from an
-automation with your own conditions (battery level, PV power, outdoor
-temperature, ...).
+- **Boost** when you have more energy than you need: the battery is full and
+  the sun is still producing, or electricity is cheap right now. Instead of
+  exporting the surplus, store it as heat in the floor by raising every
+  thermostat by 1 °C for 2 hours.
+- **Setback** when energy is scarce or expensive: a price peak, a low battery,
+  or a grid alert. Lower every thermostat by 1 °C for 2 hours and let the floor
+  coast.
+
+Only one of the two runs at a time; starting one ends the other. Control them
+from the UI, or start them from automations with your own conditions (battery
+level, PV power, electricity price, outdoor temperature, ...).
 
 ![Boost card with thermostats raised by 2 °C](docs/screenshot.png)
 
@@ -33,29 +40,36 @@ Copy `custom_components/solar_floor_boost` to
 ### Setup
 
 Settings → Devices & services → **Add integration** → **Solar Floor Boost**.
-Pick the thermostats and a maximum boosted target (a safety cap, default 28 °C).
-You can change both later via **Configure**.
+Pick the thermostats, a maximum boosted target (safety cap, default 28 °C) and
+a minimum setback target (safety floor, default 15 °C). You can change them
+later via **Configure**.
 
 ## Entities
 
 | Entity | Purpose |
 | --- | --- |
-| `switch.solar_floor_boost_boost` | On starts a boost with the values below; off stops it and restores the original targets. |
+| `switch.solar_floor_boost_boost` | On starts a boost with the values below; off stops it and restores the original targets. Turning it on during a setback ends the setback. |
 | `number.solar_floor_boost_boost_amount` | Degrees to add (default 1 °C). |
 | `number.solar_floor_boost_boost_duration` | Hours in 15-minute steps, shown as "4h 45m" (default 2h, max 12h). The dashboard card shows it as a preset slider: 15m, 30m, 45m, 1h, 1h 30m, 2h, 2h 30m, 3h, 3h 30m, 4h, 5h, 6h, 8h, 12h. Up to 1.5.x this entity was in minutes. |
 | `sensor.solar_floor_boost_boost_ends` | When the boost ends. Attributes list each thermostat's original (`baseline`) and boosted (`target`) value. |
+| `switch.solar_floor_boost_setback` | On starts a setback with the values below; off stops it and restores the original targets. Turning it on during a boost ends the boost. |
+| `number.solar_floor_boost_setback_amount` | Degrees to subtract (default 1 °C). |
+| `number.solar_floor_boost_setback_duration` | Same as the boost duration (default 2h, max 12h). |
+| `sensor.solar_floor_boost_setback_ends` | When the setback ends. Attributes list each thermostat's original (`baseline`) and lowered (`target`) value. |
 
 ## Dashboard card
 
 The integration ships the card in the screenshot. Edit dashboard → **Add card**
 → **By card** (or **Browse all cards**) → **Solar Floor Boost**. On Home
 Assistant 2026.6+ it is also suggested under **By entity** (Community section)
-when you pick any Solar Floor Boost entity.
+when you pick any Solar Floor Boost entity. The card has a Boost section and a
+Setback section; the ⓘ next to each switch explains when to use it (hover, or
+tap on a phone).
 
 ```yaml
 type: custom:solar-floor-boost-card
-title: Floor heating boost  # optional
-end_format: relative        # optional: relative, time, datetime, ...
+title: Floor heating   # optional
+end_format: relative   # optional: relative, time, datetime, ...
 ```
 
 If you prefer a plain entities card that you can customise:
@@ -65,8 +79,10 @@ type: entities
 title: Floor heating boost
 show_header_toggle: false
 entities:
-  - entity: switch.solar_floor_boost_boost
+  - type: custom:solar-floor-boost-switch-row  # toggle with an ⓘ hint
+    entity: switch.solar_floor_boost_boost
     name: Boost
+    hint: Use when the battery is full or electricity is cheap.
   - entity: number.solar_floor_boost_boost_amount
     name: Boost amount
   - type: custom:solar-floor-boost-duration-row  # preset slider (15m … 12h)
@@ -79,6 +95,24 @@ entities:
     row:
       entity: sensor.solar_floor_boost_boost_ends
       name: Boost ends
+      format: relative
+  - type: divider
+  - type: custom:solar-floor-boost-switch-row
+    entity: switch.solar_floor_boost_setback
+    name: Setback
+    hint: Use when electricity is expensive or the battery is low.
+  - entity: number.solar_floor_boost_setback_amount
+    name: Setback amount
+  - type: custom:solar-floor-boost-duration-row
+    entity: number.solar_floor_boost_setback_duration
+    name: Setback duration
+  - type: conditional
+    conditions:
+      - entity: switch.solar_floor_boost_setback
+        state: "on"
+    row:
+      entity: sensor.solar_floor_boost_setback_ends
+      name: Setback ends
       format: relative
 ```
 
@@ -96,6 +130,25 @@ data:
 ```yaml
 action: solar_floor_boost.stop
 ```
+
+The setback actions take the same fields:
+
+```yaml
+action: solar_floor_boost.start_setback
+data:
+  delta: 2          # optional, defaults to Setback amount
+  duration: 60      # minutes (any value), optional, defaults to Setback duration
+  climate_entities: # optional, defaults to all configured thermostats
+    - climate.living_room
+```
+
+```yaml
+action: solar_floor_boost.stop_setback
+```
+
+Each `stop` action only ends its own mode, so an automation that stops the
+boost never cuts a setback short, and vice versa. Starting one mode while the
+other runs ends the other first.
 
 ## Example automation: boost with solar surplus
 
@@ -157,8 +210,23 @@ In the automation editor, each condition shows a live ✓ or ✕: whether it's
 true right now. A ✕ is not an error, just a condition that currently blocks
 the boost (for example a boost already running).
 
+## Example automation: set back when energy is expensive
+
+[examples/expensive_energy_setback.yaml](examples/expensive_energy_setback.yaml)
+lowers all configured thermostats for 1 hour whenever the electricity price is
+above a limit, re-checking every 10 minutes so the setback continues for as
+long as the price stays high. Replace `sensor.electricity_price` with your
+price sensor (for example from the Nord Pool, Tibber or ENTSO-e integrations)
+and `0.30` with your limit in its unit. The amount comes from the **Setback
+amount** entity; add `delta: 2` under `duration` to fix it in the automation.
+
 ## Behaviour
 
+Everything below applies to a setback as well as a boost; a setback just
+moves the targets down instead of up.
+
+- **Boost and setback never run together.** Starting one while the other runs
+  restores the original targets first, then applies the new mode to them.
 - **Original targets are remembered** per thermostat and restored when the
   boost ends. They are saved to disk, so a restart during a boost still
   restores them (right after startup if the end time passed while Home
@@ -172,7 +240,8 @@ the boost (for example a boost already running).
   is unavailable when the boost ends is restored as soon as it comes back
   (listed in the sensor's `pending_restore` attribute).
 - The boosted target is rounded to the thermostat's temperature step and capped
-  at the configured maximum and the thermostat's own `max_temp`.
+  at the configured maximum and the thermostat's own `max_temp`. A setback
+  target is floored at the configured minimum and the thermostat's `min_temp`.
 - Removing the integration restores all thermostats.
 
 ## Development

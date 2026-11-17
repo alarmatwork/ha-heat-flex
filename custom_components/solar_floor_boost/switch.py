@@ -1,4 +1,4 @@
-"""Switch to start/stop the boost from the UI."""
+"""Switches to start/stop the boost and the setback from the UI."""
 
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import SolarFloorBoostConfigEntry
 from .boost import BoostManager
+from .const import MODE_BOOST, MODE_SETBACK
 from .entity import BoostEntity
+
+ICONS = {MODE_BOOST: "mdi:heating-coil", MODE_SETBACK: "mdi:thermometer-low"}
 
 
 async def async_setup_entry(
@@ -18,21 +21,25 @@ async def async_setup_entry(
     entry: SolarFloorBoostConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    async_add_entities([BoostSwitch(entry.runtime_data)])
+    async_add_entities(
+        [ModeSwitch(entry.runtime_data, MODE_BOOST), ModeSwitch(entry.runtime_data, MODE_SETBACK)]
+    )
 
 
-class BoostSwitch(BoostEntity, SwitchEntity):
-    _attr_icon = "mdi:heating-coil"
+class ModeSwitch(BoostEntity, SwitchEntity):
+    """On while the mode runs. Turning one on turns the other off."""
 
-    def __init__(self, manager: BoostManager) -> None:
-        super().__init__(manager, "boost")
+    def __init__(self, manager: BoostManager, mode: str) -> None:
+        super().__init__(manager, mode)
+        self._mode = mode
+        self._attr_icon = ICONS[mode]
 
     @property
     def is_on(self) -> bool:
-        return self._manager.is_active
+        return self._manager.is_mode_active(self._mode)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._manager.async_start()
+        await self._manager.async_start(mode=self._mode)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._manager.async_stop()
+        await self._manager.async_stop(self._mode)

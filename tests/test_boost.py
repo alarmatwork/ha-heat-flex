@@ -113,15 +113,25 @@ async def test_config_flow(hass: HomeAssistant):
     hass.states.async_set(A, "heat", {"temperature": 22.0})
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     assert result["type"] == "form"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"climate_entities": [A], "max_temperature": 26})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"climate_entities": [A], "max_temperature": 26, "min_temperature": 16})
     assert result["type"] == "create_entry"
-    assert result["options"] == {"climate_entities": [A], "max_temperature": 26}
+    assert result["options"] == {"climate_entities": [A], "max_temperature": 26, "min_temperature": 16}
     entry = result["result"]
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"climate_entities": [A], "max_temperature": 25})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"climate_entities": [A], "max_temperature": 25, "min_temperature": 17})
     assert result["type"] == "create_entry"
     await hass.async_block_till_done()
     assert entry.options["max_temperature"] == 25
+    assert entry.options["min_temperature"] == 17
+
+
+async def test_options_flow_entry_without_minimum(hass: HomeAssistant):
+    """Entries from before 1.7.0 have no minimum; the form offers the default."""
+    entry, calls = await _setup(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    schema = result["data_schema"].schema
+    key = next(k for k in schema if k == "min_temperature")
+    assert key.default() == 15.0
 
 
 async def test_dashboard_card_registered(hass: HomeAssistant):
@@ -223,3 +233,135 @@ async def test_restore_duration_saved_in_minutes(hass: HomeAssistant, freezer):
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert t(hass, A) == 22.0  # boost lasted 90 minutes
+
+
+# --- setback ---------------------------------------------------------------
+
+SETBACK = "switch.solar_floor_boost_setback"
+BOOST = "switch.solar_floor_boost_boost"
+
+
+async def test_switch_setback_and_restore(hass: HomeAssistant, freezer: FrozenDateTimeFactory):
+    entry, calls = await _setup(hass)
+    assert hass.states.get("number.solar_floor_boost_setback_amount").state == "1.0"
+    assert hass.states.get("number.solar_floor_boost_setback_duration").state == "2.0"
+    hass.states.async_set(A, "heat", {"temperature": 15.5, "target_temp_step": 0.5, "min_temp": 7})
+    hass.states.async_set(B, "heat", {"temperature": 22.0, "min_temp": 21.5})
+    await hass.services.async_call("switch", "turn_on", {"entity_id": SETBACK}, blocking=True)
+    assert t(hass, A) == 15.0  # floored by min_temperature (15)
+    assert t(hass, B) == 21.5  # floored by the thermostat's own min_temp
+    assert t(hass, OFF) == 19.0
+    assert hass.states.get(SETBACK).state == "on"
+    assert hass.states.get(BOOST).state == "off"
+    sensor = hass.states.get("sensor.solar_floor_boost_setback_ends")
+    assert sensor.state != "unknown"
+    assert sensor.attributes["delta"] == 1.0
+    assert sensor.attributes["setback"][OFF] == {"baseline": 20.0, "target": 19.0}
+    boost_sensor = hass.states.get("sensor.solar_floor_boost_boost_ends")
+    assert boost_sensor.state == "unknown" and boost_sensor.attributes["boosted"] == {}
+
+    freezer.tick(timedelta(minutes=121))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert t(hass, A) == 15.5 and t(hass, B) == 22.0 and t(hass, OFF) == 20.0
+    assert hass.states.get(SETBACK).state == "off"
+
+
+async def test_setback_skips_thermostat_at_floor(hass: HomeAssistant):
+    entry, calls = await _setup(hass)
+    hass.states.async_set(A, "heat", {"temperature": 15.0})
+    await hass.services.async_call(DOMAIN, "start_setback", {"climate_entities": [A]}, blocking=True)
+    assert t(hass, A) == 15.0
+    assert hass.states.get(SETBACK).state == "off"  # nothing could be adjusted
+
+
+async def test_setback_service_and_stop(hass: HomeAssistant, freezer):
+    entry, calls = await _setup(hass)
+    await hass.services.async_call(DOMAIN, "start_setback", {"delta": 2.5, "duration": 30, "climate_entities": [A]}, blocking=True)
+    assert t(hass, A) == 19.5 and t(hass, B) == 27.5
+    # stop (the boost one) must leave the setback alone
+    await hass.services.async_call(DOMAIN, "stop", {}, blocking=True)
+    assert t(hass, A) == 19.5 and hass.states.get(SETBACK).state == "on"
+    await hass.services.async_call(DOMAIN, "stop_setback", {}, blocking=True)
+    assert t(hass, A) == 22.0 and hass.states.get(SETBACK).state == "off"
+
+
+async def test_modes_are_exclusive(hass: HomeAssistant, freezer):
+    entry, calls = await _setup(hass)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True)
+    assert t(hass, A) == 23.0
+    # Starting a setback ends the boost: A goes back to 22 and then down to 21.
+    await hass.services.async_call("switch", "turn_on", {"entity_id": SETBACK}, blocking=True)
+    assert t(hass, A) == 21.0 and t(hass, B) == 26.5
+    assert hass.states.get(BOOST).state == "off" and hass.states.get(SETBACK).state == "on"
+    assert [c for c in calls if c[0] == A][-2:] == [(A, 22.0), (A, 21.0)]
+    # And back again via the boost switch.
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True)
+    assert t(hass, A) == 23.0 and t(hass, B) == 28.0
+    assert hass.states.get(BOOST).state == "on" and hass.states.get(SETBACK).state == "off"
+    # Turning off the switch of the mode that isn't running changes nothing.
+    await hass.services.async_call("switch", "turn_off", {"entity_id": SETBACK}, blocking=True)
+    assert t(hass, A) == 23.0 and hass.states.get(BOOST).state == "on"
+    freezer.tick(timedelta(minutes=121))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert t(hass, A) == 22.0 and t(hass, B) == 27.5
+
+
+async def test_setback_survives_reload(hass: HomeAssistant, freezer):
+    entry, calls = await _setup(hass)
+    await hass.services.async_call(DOMAIN, "start_setback", {"duration": 60}, blocking=True)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(SETBACK).state == "on" and hass.states.get(BOOST).state == "off"
+    freezer.tick(timedelta(minutes=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert t(hass, A) == 22.0 and hass.states.get(SETBACK).state == "off"
+
+
+async def test_storage_from_1_6_is_a_boost(hass: HomeAssistant, freezer):
+    """1.6.x storage has no mode; it can only have been a boost."""
+    from homeassistant.util import dt as dt_util
+
+    hass.states.async_set(A, "heat", {"temperature": 23.0})
+    entry = MockConfigEntry(domain=DOMAIN, title="Solar Floor Boost", options={"climate_entities": [A], "max_temperature": 28})
+    entry.add_to_hass(hass)
+    ends = (dt_util.utcnow() + timedelta(minutes=30)).isoformat()
+    from homeassistant.helpers.storage import Store
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_save(
+        {"ends_at": ends, "delta": 1.0, "boosted": {A: {"baseline": 22.0, "target": 23.0}}}
+    )
+    calls = []
+
+    async def set_temp(call: ServiceCall):
+        eid = call.data["entity_id"]
+        eid = eid[0] if isinstance(eid, list) else eid
+        calls.append((eid, call.data["temperature"]))
+        st = hass.states.get(eid)
+        hass.states.async_set(eid, st.state, {**st.attributes, "temperature": call.data["temperature"]})
+
+    assert await async_setup_component(hass, "climate", {})
+    hass.services.async_register("climate", "set_temperature", set_temp)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(BOOST).state == "on" and hass.states.get(SETBACK).state == "off"
+    assert hass.states.get("sensor.solar_floor_boost_boost_ends").attributes["boosted"][A]["baseline"] == 22.0
+    freezer.tick(timedelta(minutes=31))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert t(hass, A) == 22.0
+
+
+async def test_failed_setback_still_ends_boost(hass: HomeAssistant):
+    """Starting a setback that can't adjust anything still ends the boost."""
+    entry, calls = await _setup(hass)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True)
+    assert t(hass, A) == 23.0
+    hass.states.async_set(OFF, "unavailable", {})
+    await hass.services.async_call(DOMAIN, "start_setback", {"climate_entities": [OFF]}, blocking=True)
+    assert t(hass, A) == 22.0 and t(hass, B) == 27.5
+    assert hass.states.get(BOOST).state == "off" and hass.states.get(SETBACK).state == "off"
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(BOOST).state == "off"

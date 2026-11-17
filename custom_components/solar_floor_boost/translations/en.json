@@ -3,13 +3,15 @@
     "step": {
       "user": {
         "title": "Solar Floor Boost",
-        "description": "Pick the thermostats to raise when there is surplus solar energy.",
+        "description": "Pick the thermostats to raise (boost) or lower (setback) for a while.",
         "data": {
           "climate_entities": "Thermostats",
-          "max_temperature": "Maximum boosted target"
+          "max_temperature": "Maximum boosted target",
+          "min_temperature": "Minimum setback target"
         },
         "data_description": {
-          "max_temperature": "A boost never sets a target above this value."
+          "max_temperature": "A boost never sets a target above this value.",
+          "min_temperature": "A setback never sets a target below this value."
         }
       }
     },
@@ -23,10 +25,12 @@
         "title": "Solar Floor Boost",
         "data": {
           "climate_entities": "Thermostats",
-          "max_temperature": "Maximum boosted target"
+          "max_temperature": "Maximum boosted target",
+          "min_temperature": "Minimum setback target"
         },
         "data_description": {
-          "max_temperature": "A boost never sets a target above this value."
+          "max_temperature": "A boost never sets a target above this value.",
+          "min_temperature": "A setback never sets a target below this value."
         }
       }
     }
@@ -38,16 +42,28 @@
       },
       "duration": {
         "name": "Boost duration"
+      },
+      "setback_delta": {
+        "name": "Setback amount"
+      },
+      "setback_duration": {
+        "name": "Setback duration"
       }
     },
     "sensor": {
       "boost_end": {
         "name": "Boost ends"
+      },
+      "setback_end": {
+        "name": "Setback ends"
       }
     },
     "switch": {
       "boost": {
         "name": "Boost"
+      },
+      "setback": {
+        "name": "Setback"
       }
     }
   },
@@ -59,7 +75,7 @@
   "services": {
     "start": {
       "name": "Start boost",
-      "description": "Raise thermostat targets for a while, then restore the original targets. Calling it during a boost re-applies the amount to the original targets and restarts the timer.",
+      "description": "Raise thermostat targets for a while, then restore the original targets. Use it when energy is plentiful or cheap. Calling it during a boost re-applies the amount to the original targets and restarts the timer; calling it during a setback ends the setback first.",
       "fields": {
         "delta": {
           "name": "Amount",
@@ -77,7 +93,29 @@
     },
     "stop": {
       "name": "Stop boost",
-      "description": "End the boost now and restore the original targets."
+      "description": "End the boost now and restore the original targets. Does nothing during a setback."
+    },
+    "start_setback": {
+      "name": "Start setback",
+      "description": "Lower thermostat targets for a while, then restore the original targets. Use it when energy is scarce or expensive. Calling it during a setback re-applies the amount to the original targets and restarts the timer; calling it during a boost ends the boost first.",
+      "fields": {
+        "delta": {
+          "name": "Amount",
+          "description": "Degrees to subtract from each target. Defaults to the Setback amount entity."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Minutes until targets are restored. Defaults to the Setback duration entity."
+        },
+        "climate_entities": {
+          "name": "Thermostats",
+          "description": "Only set back these. Defaults to all configured thermostats."
+        }
+      }
+    },
+    "stop_setback": {
+      "name": "Stop setback",
+      "description": "End the setback now and restore the original targets. Does nothing during a boost."
     }
   }
 }

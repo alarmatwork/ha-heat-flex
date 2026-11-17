@@ -9,6 +9,22 @@ const ROWS = {
   delta: ["number.solar_floor_boost_boost_amount", "Boost amount"],
   duration: ["number.solar_floor_boost_boost_duration", "Boost duration"],
   boost_end: ["sensor.solar_floor_boost_boost_ends", "Boost ends"],
+  setback: ["switch.solar_floor_boost_setback", "Setback"],
+  setback_delta: ["number.solar_floor_boost_setback_amount", "Setback amount"],
+  setback_duration: ["number.solar_floor_boost_setback_duration", "Setback duration"],
+  setback_end: ["sensor.solar_floor_boost_setback_ends", "Setback ends"],
+};
+
+// Shown by the (i) next to each mode's switch.
+const HINTS = {
+  boost:
+    "Raises the thermostats for a while, then puts them back.\n" +
+    "Use it when you have more energy than you need: the battery is full " +
+    "and the sun is still shining, or electricity is cheap right now.",
+  setback:
+    "Lowers the thermostats for a while, then puts them back.\n" +
+    "Use it when energy is scarce or expensive: a price peak, a low " +
+    "battery, or a grid alert.",
 };
 
 // Entity IDs can be renamed by the user, so look them up in the registry.
@@ -30,35 +46,49 @@ function findEntities(hass) {
   return ids;
 }
 
+// The rows of one mode: switch with hint, amount, duration, "ends" while on.
+function modeRows(config, ids, mode, deltaKey, durationKey, endKey) {
+  return [
+    {
+      type: "custom:solar-floor-boost-switch-row",
+      entity: ids[mode],
+      name: ROWS[mode][1],
+      hint: HINTS[mode],
+    },
+    { entity: ids[deltaKey], name: ROWS[deltaKey][1] },
+    {
+      type: "custom:solar-floor-boost-duration-row",
+      entity: ids[durationKey],
+      name: ROWS[durationKey][1],
+    },
+    {
+      type: "conditional",
+      conditions: [{ entity: ids[mode], state: "on" }],
+      row: {
+        entity: ids[endKey],
+        name: ROWS[endKey][1],
+        format: config.end_format ?? "relative",
+      },
+    },
+  ];
+}
+
 function entitiesCardConfig(config, ids) {
   return {
     type: "entities",
-    title: config.title ?? "Floor heating boost",
+    title: config.title ?? "Floor heating",
     show_header_toggle: false,
     entities: [
-      { entity: ids.boost, name: ROWS.boost[1] },
-      { entity: ids.delta, name: ROWS.delta[1] },
-      {
-        type: "custom:solar-floor-boost-duration-row",
-        entity: ids.duration,
-        name: ROWS.duration[1],
-      },
-      {
-        type: "conditional",
-        conditions: [{ entity: ids.boost, state: "on" }],
-        row: {
-          entity: ids.boost_end,
-          name: ROWS.boost_end[1],
-          format: config.end_format ?? "relative",
-        },
-      },
+      ...modeRows(config, ids, "boost", "delta", "duration", "boost_end"),
+      { type: "divider" },
+      ...modeRows(config, ids, "setback", "setback_delta", "setback_duration", "setback_end"),
     ],
   };
 }
 
 class SolarFloorBoostCard extends HTMLElement {
   static getStubConfig() {
-    return { title: "Floor heating boost" };
+    return { title: "Floor heating" };
   }
 
   setConfig(config) {
@@ -98,11 +128,118 @@ class SolarFloorBoostCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 4;
+    return 8;
   }
 
   getGridOptions() {
     return { columns: 12, min_columns: 6 };
+  }
+}
+
+// Toggle row with an (i) that explains when to use the mode. Hover shows the
+// hint on desktop; a tap toggles it on touch screens. Usable in any entities
+// card:
+//   - type: custom:solar-floor-boost-switch-row
+//     entity: switch.solar_floor_boost_boost
+//     hint: Use when ...
+class SolarFloorBoostSwitchRow extends HTMLElement {
+  setConfig(config) {
+    if (!config.entity) throw new Error("entity is required");
+    this._config = config;
+    this._row = undefined;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._row) this._render();
+    this._row.hass = hass;
+    this._toggle.hass = hass;
+    this._toggle.stateObj = hass.states[this._config.entity];
+  }
+
+  _render() {
+    const style = document.createElement("style");
+    style.textContent = `
+      .wrap { display: flex; align-items: center; gap: 4px; }
+      .info {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 36px; height: 36px; border-radius: 50%; border: 0;
+        background: none; cursor: pointer; padding: 0;
+        color: var(--secondary-text-color);
+      }
+      .info:hover, .info:focus-visible { color: var(--primary-color); outline: none; }
+      .info ha-icon { --mdc-icon-size: 20px; }
+      .tip {
+        position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 32px));
+        padding: 10px 12px; border-radius: var(--ha-card-border-radius, 12px);
+        background: var(--card-background-color, #fff);
+        color: var(--primary-text-color);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--divider-color);
+        font-size: 0.9em; line-height: 1.4; white-space: pre-line;
+      }
+      .tip[hidden] { display: none; }
+    `;
+    const row = document.createElement("hui-generic-entity-row");
+    row.config = this._config;
+    const wrap = document.createElement("div");
+    wrap.className = "wrap";
+    this._info = Object.assign(document.createElement("button"), {
+      className: "info",
+      type: "button",
+      title: "",
+    });
+    this._info.setAttribute("aria-label", "What is this for?");
+    const icon = document.createElement("ha-icon");
+    icon.setAttribute("icon", "mdi:information-outline");
+    this._info.append(icon);
+    this._tip = Object.assign(document.createElement("div"), {
+      className: "tip",
+      hidden: true,
+      textContent: this._config.hint ?? "",
+    });
+    this._tip.setAttribute("role", "tooltip");
+    // HA's own toggle: same look and behaviour as a toggle entity row.
+    this._toggle = document.createElement("ha-entity-toggle");
+
+    const show = () => {
+      if (!this._config.hint) return;
+      const r = this._info.getBoundingClientRect();
+      this._tip.hidden = false;
+      // Below the icon, right-aligned to it, kept inside the viewport.
+      const width = this._tip.offsetWidth;
+      this._tip.style.top = `${r.bottom + 4}px`;
+      this._tip.style.left = `${Math.max(16, Math.min(r.right - width, window.innerWidth - width - 16))}px`;
+    };
+    const hide = () => {
+      this._tip.hidden = true;
+    };
+    this._info.addEventListener("mouseenter", show);
+    this._info.addEventListener("mouseleave", hide);
+    this._info.addEventListener("focus", show);
+    this._info.addEventListener("blur", hide);
+    this._info.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this._tip.hidden ? show() : hide();
+    });
+    this._onDocClick = (ev) => {
+      if (!ev.composedPath().includes(this._info)) hide();
+    };
+    [this._info, this._toggle].forEach((el) =>
+      el.addEventListener("click", (ev) => ev.stopPropagation())
+    );
+    wrap.append(this._info, this._toggle);
+    row.append(wrap);
+    this.replaceChildren(style, row, this._tip);
+    this._row = row;
+  }
+
+  connectedCallback() {
+    if (this._onDocClick) document.addEventListener("click", this._onDocClick);
+  }
+
+  disconnectedCallback() {
+    if (this._onDocClick) document.removeEventListener("click", this._onDocClick);
   }
 }
 
@@ -211,13 +348,16 @@ function register() {
   if (!registry.get("solar-floor-boost-duration-row")) {
     registry.define("solar-floor-boost-duration-row", SolarFloorBoostDurationRow);
   }
+  if (!registry.get("solar-floor-boost-switch-row")) {
+    registry.define("solar-floor-boost-switch-row", SolarFloorBoostSwitchRow);
+  }
   if (registry.get("solar-floor-boost-card")) return;
   registry.define("solar-floor-boost-card", SolarFloorBoostCard);
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "solar-floor-boost-card",
     name: "Solar Floor Boost",
-    description: "Start/stop the boost, set amount and duration, see when it ends.",
+    description: "Boost or set back the floor heating: amount, duration, and when it ends.",
     preview: true,
     // HA 2026.6+: offer this card in "By entity" for any of our entities.
     getEntitySuggestion: (hass, entityId) =>

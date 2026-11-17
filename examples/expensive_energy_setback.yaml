@@ -1,0 +1,29 @@
+# Expensive energy -> lower floor heating (requires the Solar Floor Boost integration)
+# Paste into Settings > Automations > Create > ⋮ > Edit in YAML, then replace
+# the price sensor entity ID with your own (see the README).
+alias: "Expensive energy - set back floor heating"
+description: >
+  Electricity price above the limit: lower the configured thermostats
+  by 2 °C until the price drops (re-checked every 10 minutes)
+mode: single
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.electricity_price
+    above: 0.30
+  # Re-check regularly so a new setback starts after the previous one ends
+  - trigger: time_pattern
+    minutes: "/10"
+conditions:
+  # Not already set back
+  - condition: state
+    entity_id: switch.solar_floor_boost_setback
+    state: "off"
+  - condition: numeric_state
+    entity_id: sensor.electricity_price
+    above: 0.30
+actions:
+  # Amount comes from the integration's "Setback amount" setting; all
+  # configured thermostats are set back. A running boost is ended first.
+  - action: solar_floor_boost.start_setback
+    data:
+      duration: 60

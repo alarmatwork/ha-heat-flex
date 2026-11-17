@@ -1,4 +1,4 @@
-"""Boost manager: raises thermostat targets temporarily and restores them."""
+"""Boost/setback manager: moves thermostat targets temporarily and restores them."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import voluptuous as vol
 
 from homeassistant.components.climate.const import (
     ATTR_MAX_TEMP,
+    ATTR_MIN_TEMP,
     ATTR_TARGET_TEMP_STEP,
     DOMAIN as CLIMATE_DOMAIN,
     SERVICE_SET_TEMPERATURE,
@@ -44,11 +45,15 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_CLIMATES,
     CONF_MAX_TEMPERATURE,
+    CONF_MIN_TEMPERATURE,
     DEFAULT_DELTA,
     DEFAULT_DURATION,
     DEFAULT_MAX_TEMPERATURE,
+    DEFAULT_MIN_TEMPERATURE,
     DEFAULT_TEMP_STEP,
     DOMAIN,
+    MODE_BOOST,
+    MODE_SETBACK,
     STORAGE_VERSION,
 )
 
@@ -61,7 +66,7 @@ UNAVAILABLE_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 @dataclass
 class BoostedClimate:
-    """Target temperatures of one boosted thermostat."""
+    """Target temperatures of one adjusted thermostat."""
 
     baseline: float
     target: float
@@ -72,14 +77,15 @@ def _same(a: float, b: float) -> bool:
 
 
 class BoostManager:
-    """Owns the boost state for one config entry.
+    """Owns the boost/setback state for one config entry.
 
-    Every thermostat that was raised is remembered in ``boosted`` until it is
-    restored. When the boost ends, a thermostat is only put back to its baseline
-    if its target is still the one we set; a manual change wins. Thermostats
-    that are unavailable at the end stay in ``boosted`` and are restored as
-    soon as they come back. State is persisted so a restart doesn't strand a
-    raised setpoint.
+    A boost raises targets, a setback lowers them; at most one of the two runs
+    at a time (starting one ends the other). Every thermostat that was moved is
+    remembered in ``boosted`` until it is restored. When the session ends, a
+    thermostat is only put back to its baseline if its target is still the one
+    we set; a manual change wins. Thermostats that are unavailable at the end
+    stay in ``boosted`` and are restored as soon as they come back. State is
+    persisted so a restart doesn't strand a moved setpoint.
     """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -92,7 +98,11 @@ class BoostManager:
         # the number entities.
         self.delta: float = DEFAULT_DELTA
         self.duration: float = DEFAULT_DURATION
-        # Current boost.
+        self.setback_delta: float = DEFAULT_DELTA
+        self.setback_duration: float = DEFAULT_DURATION
+        # Current session. ``mode`` stays set after the end while thermostats
+        # are still waiting to be restored, so they are reported under it.
+        self.mode: str | None = None
         self.active_delta: float | None = None
         self.ends_at: datetime | None = None
         self.boosted: dict[str, BoostedClimate] = {}
@@ -114,13 +124,29 @@ class BoostManager:
         )
 
     @property
+    def min_temperature(self) -> float:
+        return float(
+            self.entry.options.get(CONF_MIN_TEMPERATURE, DEFAULT_MIN_TEMPERATURE)
+        )
+
+    @property
     def is_active(self) -> bool:
+        """A boost or a setback is running."""
         return self.ends_at is not None
+
+    def is_mode_active(self, mode: str) -> bool:
+        return self.is_active and self.mode == mode
 
     @property
     def pending_restore(self) -> list[str]:
-        """Thermostats whose boost has ended but couldn't be restored yet."""
+        """Thermostats whose session has ended but couldn't be restored yet."""
         return [] if self.is_active else list(self.boosted)
+
+    def default_delta(self, mode: str) -> float:
+        return self.setback_delta if mode == MODE_SETBACK else self.delta
+
+    def default_duration(self, mode: str) -> float:
+        return self.setback_duration if mode == MODE_SETBACK else self.duration
 
     @callback
     def async_add_listener(self, update_callback: CALLBACK_TYPE) -> Callable[[], None]:
@@ -134,7 +160,7 @@ class BoostManager:
 
     @callback
     def async_set_default(self, key: str, value: float) -> None:
-        """Set the default ``delta`` or ``duration``; every entity showing it updates."""
+        """Set a default (``delta``, ``setback_duration``, ...); entities showing it update."""
         setattr(self, key, value)
         self._notify()
 
@@ -154,6 +180,10 @@ class BoostManager:
             entity_id: BoostedClimate(**rec)
             for entity_id, rec in data.get("boosted", {}).items()
         }
+        # Saved by 1.6.x and older: only boosts existed.
+        self.mode = data.get("mode") or (
+            MODE_BOOST if (self.ends_at or self.boosted) else None
+        )
         if resume and (self.ends_at or self.boosted):
             # Thermostats may not be loaded yet; wait until HA has started.
             self._unsub_started = async_at_started(self.hass, self._async_resume)
@@ -168,7 +198,7 @@ class BoostManager:
 
     @callback
     def async_shutdown(self) -> None:
-        """Stop timers/listeners. The boost itself persists in storage."""
+        """Stop timers/listeners. The session itself persists in storage."""
         for unsub in (self._unsub_timer, self._unsub_pending, self._unsub_started):
             if unsub:
                 unsub()
@@ -184,57 +214,84 @@ class BoostManager:
         delta: float | None = None,
         duration: float | None = None,
         entity_ids: list[str] | None = None,
+        mode: str = MODE_BOOST,
     ) -> None:
-        """Raise targets by ``delta`` °C for ``duration`` minutes.
+        """Move targets by ``delta`` °C for ``duration`` minutes.
 
-        If a boost is already running, the new delta is applied on top of the
-        original baselines (not stacked) and the end time is reset to now +
-        duration.
+        A boost raises them, a setback lowers them. If the same mode is already
+        running, the new delta is applied to the original baselines (not
+        stacked) and the end time is reset to now + duration. If the other mode
+        is running, it is ended first and its thermostats restored.
         """
-        delta = self.delta if delta is None else delta
-        duration = self.duration if duration is None else duration
+        delta = self.default_delta(mode) if delta is None else delta
+        duration = self.default_duration(mode) if duration is None else duration
         entity_ids = entity_ids or self.climate_entities
 
         async with self._lock:
+            if self.mode is not None and self.mode != mode:
+                _LOGGER.info("Ending %s to start %s", self.mode, mode)
+                await self._async_end()
             results = await asyncio.gather(
-                *(self._async_boost(entity_id, delta) for entity_id in entity_ids)
+                *(
+                    self._async_adjust(entity_id, delta, mode)
+                    for entity_id in entity_ids
+                )
             )
             if not any(results) and not self.is_active:
-                _LOGGER.warning("No thermostat could be boosted: %s", entity_ids)
+                _LOGGER.warning(
+                    "No thermostat could be adjusted for %s: %s", mode, entity_ids
+                )
+                # The other mode may just have been ended above.
+                await self._async_save()
+                self._notify()
                 return
+            self.mode = mode
             self.active_delta = delta
             self.ends_at = dt_util.utcnow() + timedelta(minutes=duration)
             self._schedule_end()
             self._update_pending_tracking()
             await self._async_save()
         _LOGGER.info(
-            "Boost +%s°C until %s for %s",
+            "%s %s%s°C until %s for %s",
+            mode.capitalize(),
+            "-" if mode == MODE_SETBACK else "+",
             delta,
             dt_util.as_local(self.ends_at),
             list(self.boosted),
         )
         self._notify()
 
-    async def async_stop(self) -> None:
-        """End the boost and restore baselines."""
+    async def async_stop(self, mode: str | None = None) -> None:
+        """End the running session and restore baselines.
+
+        With ``mode``, only that mode is ended; the other keeps running.
+        """
         async with self._lock:
-            if self._unsub_timer:
-                self._unsub_timer()
-                self._unsub_timer = None
-            self.ends_at = None
-            self.active_delta = None
-            await asyncio.gather(
-                *(self._async_restore(entity_id) for entity_id in list(self.boosted))
-            )
-            self._update_pending_tracking()
+            if mode is not None and self.mode != mode:
+                return
+            await self._async_end()
             await self._async_save()
         if self.boosted:
-            _LOGGER.info("Boost ended; waiting to restore %s", list(self.boosted))
+            _LOGGER.info("%s ended; waiting to restore %s", self.mode, list(self.boosted))
         self._notify()
 
     # --- internals -----------------------------------------------------------
 
-    async def _async_boost(self, entity_id: str, delta: float) -> bool:
+    async def _async_end(self) -> None:
+        """Restore what can be restored; the caller holds the lock and saves."""
+        if self._unsub_timer:
+            self._unsub_timer()
+            self._unsub_timer = None
+        self.ends_at = None
+        self.active_delta = None
+        await asyncio.gather(
+            *(self._async_restore(entity_id) for entity_id in list(self.boosted))
+        )
+        if not self.boosted:
+            self.mode = None
+        self._update_pending_tracking()
+
+    async def _async_adjust(self, entity_id: str, delta: float, mode: str) -> bool:
         state = self.hass.states.get(entity_id)
         if state is None or state.state in UNAVAILABLE_STATES:
             _LOGGER.warning("Skipping %s: unavailable", entity_id)
@@ -245,20 +302,23 @@ class BoostManager:
         current = float(current)
 
         rec = self.boosted.get(entity_id)
-        # Re-boosting: keep the original baseline unless someone changed the
-        # target in the meantime.
+        # Starting again: keep the original baseline unless someone changed
+        # the target in the meantime.
         baseline = rec.baseline if rec and _same(current, rec.target) else current
-        target = self._compute_target(state, baseline, delta)
-        if target <= baseline:
+        target = self._compute_target(state, baseline, delta, mode)
+        if (target <= baseline) if mode == MODE_BOOST else (target >= baseline):
             _LOGGER.warning(
-                "Skipping %s: baseline %s is already at the cap", entity_id, baseline
+                "Skipping %s: baseline %s is already at the %s limit",
+                entity_id,
+                baseline,
+                mode,
             )
             return False
         if not _same(current, target) and not await self._async_set_temperature(
             entity_id, target
         ):
             return False
-        _LOGGER.info("Boosted %s: %s -> %s", entity_id, baseline, target)
+        _LOGGER.info("%s %s: %s -> %s", mode.capitalize(), entity_id, baseline, target)
         self.boosted[entity_id] = BoostedClimate(baseline=baseline, target=target)
         return True
 
@@ -271,14 +331,31 @@ class BoostManager:
         current = state.attributes.get(ATTR_TEMPERATURE)
         if current is None or not _same(float(current), rec.target):
             _LOGGER.info(
-                "Not restoring %s: target changed to %s since boost", entity_id, current
+                "Not restoring %s: target changed to %s since %s",
+                entity_id,
+                current,
+                self.mode,
             )
         elif not await self._async_set_temperature(entity_id, rec.baseline):
             return
         del self.boosted[entity_id]
 
-    def _compute_target(self, state: State, baseline: float, delta: float) -> float:
+    def _compute_target(
+        self, state: State, baseline: float, delta: float, mode: str
+    ) -> float:
+        """Baseline moved by ``delta``, on the thermostat's step, within limits.
+
+        A boost is capped at the configured maximum and the thermostat's own
+        ``max_temp``; a setback is floored at the configured minimum and the
+        thermostat's ``min_temp``.
+        """
         step = float(state.attributes.get(ATTR_TARGET_TEMP_STEP) or DEFAULT_TEMP_STEP)
+        if mode == MODE_SETBACK:
+            target = round(round((baseline - delta) / step) * step, 2)
+            floor = self.min_temperature
+            if (device_min := state.attributes.get(ATTR_MIN_TEMP)) is not None:
+                floor = max(floor, float(device_min))
+            return max(target, floor)
         target = round(round((baseline + delta) / step) * step, 2)
         cap = self.max_temperature
         if (device_max := state.attributes.get(ATTR_MAX_TEMP)) is not None:
@@ -332,6 +409,8 @@ class BoostManager:
             if self.is_active or entity_id not in self.boosted:
                 return
             await self._async_restore(entity_id)
+            if not self.boosted:
+                self.mode = None
             self._update_pending_tracking()
             await self._async_save()
         self._notify()
@@ -344,6 +423,7 @@ class BoostManager:
     @callback
     def _data(self) -> dict[str, Any]:
         return {
+            "mode": self.mode,
             "ends_at": self.ends_at.isoformat() if self.ends_at else None,
             "delta": self.active_delta,
             "boosted": {

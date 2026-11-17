@@ -1,4 +1,4 @@
-"""Boost amount and duration, adjustable from the UI."""
+"""Boost and setback amount and duration, adjustable from the UI."""
 
 from __future__ import annotations
 
@@ -57,6 +57,28 @@ NUMBERS = (
         scale=60,
         legacy_unit=UnitOfTime.MINUTES,
     ),
+    BoostNumberDescription(
+        key="setback_delta",
+        icon="mdi:thermometer-minus",
+        native_min_value=0.5,
+        native_max_value=5,
+        native_step=0.5,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        mode=NumberMode.SLIDER,
+        default=DEFAULT_DELTA,
+    ),
+    BoostNumberDescription(
+        key="setback_duration",
+        icon="mdi:timer-outline",
+        device_class=NumberDeviceClass.DURATION,
+        native_min_value=0.25,
+        native_max_value=12,
+        native_step=0.25,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        mode=NumberMode.SLIDER,
+        default=DEFAULT_DURATION,
+        scale=60,
+    ),
 )
 
 
@@ -85,7 +107,10 @@ class BoostNumber(BoostEntity, RestoreNumber):
         last = await self.async_get_last_number_data()
         if last is None or last.native_value is None:
             value = description.default
-        elif last.native_unit_of_measurement == description.legacy_unit:
+        elif (
+            description.legacy_unit is not None
+            and last.native_unit_of_measurement == description.legacy_unit
+        ):
             value = last.native_value
         else:
             value = last.native_value * description.scale

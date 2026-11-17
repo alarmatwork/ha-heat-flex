@@ -20,7 +20,9 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_CLIMATES,
     CONF_MAX_TEMPERATURE,
+    CONF_MIN_TEMPERATURE,
     DEFAULT_MAX_TEMPERATURE,
+    DEFAULT_MIN_TEMPERATURE,
     DOMAIN,
 )
 
@@ -33,6 +35,18 @@ SCHEMA = vol.Schema(
             selector.NumberSelectorConfig(
                 min=10,
                 max=35,
+                step=0.5,
+                unit_of_measurement=UnitOfTemperature.CELSIUS,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        # Entries made before 1.7.0 have no minimum; the default fills it in.
+        vol.Required(
+            CONF_MIN_TEMPERATURE, default=DEFAULT_MIN_TEMPERATURE
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5,
+                max=25,
                 step=0.5,
                 unit_of_measurement=UnitOfTemperature.CELSIUS,
                 mode=selector.NumberSelectorMode.BOX,
@@ -56,6 +70,7 @@ class SolarFloorBoostConfigFlow(ConfigFlow, domain=DOMAIN):
         suggested = {
             CONF_CLIMATES: self.hass.states.async_entity_ids(CLIMATE_DOMAIN),
             CONF_MAX_TEMPERATURE: DEFAULT_MAX_TEMPERATURE,
+            CONF_MIN_TEMPERATURE: DEFAULT_MIN_TEMPERATURE,
         }
         return self.async_show_form(
             step_id="user",

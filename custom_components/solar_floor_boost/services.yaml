@@ -24,3 +24,29 @@ start:
           domain: climate
           multiple: true
 stop:
+start_setback:
+  fields:
+    delta:
+      example: 2
+      selector:
+        number:
+          min: 0.5
+          max: 5
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: slider
+    duration:
+      example: 120
+      selector:
+        number:
+          min: 15
+          max: 720
+          step: 15
+          unit_of_measurement: min
+          mode: slider
+    climate_entities:
+      selector:
+        entity:
+          domain: climate
+          multiple: true
+stop_setback:
