@@ -2,6 +2,10 @@
 // integration's entities. Shows up under "By card" in the card picker.
 
 const DOMAIN = "solar_floor_boost";
+// Must match manifest.json (a test checks). The device's sw_version is the
+// version that is running; when it is newer, this file is stale in the
+// browser and the card asks for a reload.
+const CARD_VERSION = "1.7.2";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -69,12 +73,21 @@ function endsRow(config, ids, mode, endKey) {
   };
 }
 
-function entitiesCardConfig(config, ids) {
+// Version of the integration that is running, from the device registry.
+function runningVersion(hass, ids) {
+  const deviceId = hass.entities?.[ids.boost]?.device_id;
+  return (deviceId && hass.devices?.[deviceId]?.sw_version) || undefined;
+}
+
+function entitiesCardConfig(config, ids, staleVersion) {
   return {
     type: "entities",
     title: config.title ?? "Floor heating",
     show_header_toggle: false,
     entities: [
+      ...(staleVersion
+        ? [{ type: "custom:solar-floor-boost-reload-row", version: staleVersion }]
+        : []),
       switchRow(ids, "boost"),
       switchRow(ids, "setback"),
       { entity: ids.delta, name: ROWS.delta[1] },
@@ -102,6 +115,7 @@ class SolarFloorBoostCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this._checkVersion(hass);
     if (this._card) {
       this._card.hass = hass;
     } else if (!this._building) {
@@ -109,6 +123,34 @@ class SolarFloorBoostCard extends HTMLElement {
       // running, otherwise a busy home would restart it forever.
       this._build();
     }
+  }
+
+  // The integration was updated while this page was open: its new card file
+  // is only picked up by a reload. Reload silently if nobody is looking,
+  // otherwise add a notice row.
+  _checkVersion(hass) {
+    if (this._stale) return;
+    const version = runningVersion(hass, findEntities(hass));
+    if (!version || version === CARD_VERSION) return;
+    this._stale = version;
+    let reloaded;
+    try {
+      reloaded = sessionStorage.getItem(RELOAD_KEY);
+    } catch (e) {
+      reloaded = undefined;
+    }
+    if (document.visibilityState === "hidden" && reloaded !== version) {
+      // Once per version per tab, so a stale file served again can't loop.
+      try {
+        sessionStorage.setItem(RELOAD_KEY, version);
+      } catch (e) {
+        // Private mode: still reload once; the guard above just won't hold.
+      }
+      location.reload();
+      return;
+    }
+    this._card = undefined;
+    this._build();
   }
 
   async _build() {
@@ -120,7 +162,7 @@ class SolarFloorBoostCard extends HTMLElement {
       // A newer setConfig started another build meanwhile.
       if (build !== this._buildId) return;
       const card = helpers.createCardElement(
-        entitiesCardConfig(this._config, findEntities(this._hass))
+        entitiesCardConfig(this._config, findEntities(this._hass), this._stale)
       );
       card.hass = this._hass;
       this.replaceChildren(card);
@@ -137,6 +179,53 @@ class SolarFloorBoostCard extends HTMLElement {
   getGridOptions() {
     return { columns: 12, min_columns: 6 };
   }
+}
+
+const RELOAD_KEY = "solar_floor_boost_reloaded_for";
+
+// Notice row shown when the integration is newer than this file.
+class SolarFloorBoostReloadRow extends HTMLElement {
+  setConfig(config) {
+    this._config = config;
+    const style = document.createElement("style");
+    style.textContent = `
+      .notice {
+        display: flex; align-items: center; gap: 12px;
+        padding: 8px 12px; margin: 0 -4px;
+        border-radius: var(--ha-card-border-radius, 12px);
+        background: var(--warning-color, #ffa600); color: #000;
+        font-size: 0.9em; line-height: 1.3;
+      }
+      .notice ha-icon { --mdc-icon-size: 20px; flex: none; }
+      .text { flex: 1; }
+      button {
+        flex: none; border: 0; border-radius: 4px; padding: 6px 12px;
+        background: rgba(0, 0, 0, 0.15); color: inherit; font: inherit;
+        font-weight: 500; text-transform: uppercase; cursor: pointer;
+      }
+      button:hover { background: rgba(0, 0, 0, 0.25); }
+    `;
+    const notice = document.createElement("div");
+    notice.className = "notice";
+    const icon = document.createElement("ha-icon");
+    icon.setAttribute("icon", "mdi:update");
+    const text = Object.assign(document.createElement("span"), {
+      className: "text",
+      textContent: `Solar Floor Boost was updated to ${config.version}. Reload the page to get the new card.`,
+    });
+    const button = Object.assign(document.createElement("button"), {
+      type: "button",
+      textContent: "Reload",
+    });
+    button.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      location.reload();
+    });
+    notice.append(icon, text, button);
+    this.replaceChildren(style, notice);
+  }
+
+  set hass(hass) {}
 }
 
 // Toggle row with an (i) that explains when to use the mode. Hover shows the
@@ -353,6 +442,9 @@ function register() {
   }
   if (!registry.get("solar-floor-boost-switch-row")) {
     registry.define("solar-floor-boost-switch-row", SolarFloorBoostSwitchRow);
+  }
+  if (!registry.get("solar-floor-boost-reload-row")) {
+    registry.define("solar-floor-boost-reload-row", SolarFloorBoostReloadRow);
   }
   if (registry.get("solar-floor-boost-card")) return;
   registry.define("solar-floor-boost-card", SolarFloorBoostCard);

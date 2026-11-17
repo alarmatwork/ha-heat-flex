@@ -21,6 +21,7 @@ class BoostEntity(Entity):
             identifiers={(DOMAIN, manager.entry.entry_id)},
             name=manager.entry.title,
             entry_type=DeviceEntryType.SERVICE,
+            sw_version=manager.version,
         )
 
     async def async_added_to_hass(self) -> None:

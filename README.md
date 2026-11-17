@@ -259,9 +259,15 @@ pytest
 
 ## Releasing
 
-Bump `version` in `custom_components/solar_floor_boost/manifest.json` and push
-to `main`. The Release workflow tags `v<version>` and publishes a GitHub
-release, which the Marketplace and HACS offer as an update.
+Bump `version` in `custom_components/solar_floor_boost/manifest.json` and
+`CARD_VERSION` in `frontend/solar-floor-boost-card.js` (a test checks they
+match) and push to `main`. The Release workflow tags `v<version>` and
+publishes a GitHub release, which the Marketplace and HACS offer as an update.
+
+After an update, open dashboards notice that the running integration is
+newer than the card they loaded: a notice row with a **Reload** button
+appears at the top of the card, and a tab that is in the background reloads
+by itself.
 
 ## License
 

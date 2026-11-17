@@ -88,6 +88,9 @@ class BoostManager:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
+        # Integration version, shown as the device's software version so the
+        # dashboard card can tell when it is older than the integration.
+        self.version: str | None = None
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )

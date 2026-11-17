@@ -117,6 +117,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: SolarFloorBoostConfigEntry
 ) -> bool:
     manager = BoostManager(hass, entry)
+    manager.version = str((await async_get_integration(hass, DOMAIN)).version)
     await manager.async_load()
     entry.runtime_data = manager
     entry.async_on_unload(manager.async_shutdown)

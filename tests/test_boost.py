@@ -478,3 +478,18 @@ async def test_amount_restored_after_unit_change(hass: HomeAssistant):
     ])
     await _setup_f(hass)
     assert hass.states.get(AMOUNT).state == "2.0"
+
+
+async def test_card_version_matches_manifest_and_device(hass: HomeAssistant):
+    """The card compares its own version with the device's sw_version."""
+    import json, re
+    from pathlib import Path
+    from homeassistant.helpers import device_registry as dr
+
+    root = Path(__file__).parent.parent / "custom_components" / DOMAIN
+    manifest = json.loads((root / "manifest.json").read_text())["version"]
+    card = (root / "frontend" / "solar-floor-boost-card.js").read_text()
+    assert re.search(r'const CARD_VERSION = "([^"]+)"', card).group(1) == manifest
+    entry, calls = await _setup(hass)
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert device.sw_version == manifest
