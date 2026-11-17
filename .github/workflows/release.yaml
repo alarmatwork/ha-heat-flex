@@ -37,8 +37,8 @@ jobs:
           git-cliff --tag "$tag" -o CHANGELOG.md
           # Release notes: this version's section without its own heading
           # (Home Assistant adds the version above the notes).
-          git-cliff --tag "$tag" --latest --strip all \
-            | sed -e '/./,$!d' -e '1{/^## /d}' -e '2{/^$/d}' > notes.md
+          git-cliff --unreleased --tag "$tag" --strip all \
+            | sed '/./,$!d' | sed '1{/^## /d}' | sed '/./,$!d' > notes.md
           cat notes.md
           if ! git diff --quiet CHANGELOG.md; then
             git config user.name "github-actions[bot]"
