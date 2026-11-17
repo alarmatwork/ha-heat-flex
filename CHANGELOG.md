@@ -5,6 +5,16 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [1.7.3](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.7.3) - 2026-11-17
+
+### Added
+
+- Add an automatically generated changelog, shown as release notes in Home Assistant
+
+### Maintenance
+
+- Release workflow: notes come from the unreleased commits, heading stripped
+
 ## [1.7.2](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.7.2) - 2026-11-17
 
 ### Changed
