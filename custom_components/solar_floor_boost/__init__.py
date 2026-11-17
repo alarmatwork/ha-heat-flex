@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import voluptuous as vol
@@ -100,9 +101,15 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=True)]
     )
-    # Version in the URL so browsers fetch the new file after an update.
+    # Version and file hash in the URL so browsers fetch the new file after
+    # any update, also one that keeps the version (branch or manual install).
     version = (await async_get_integration(hass, DOMAIN)).version
-    add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    digest = await hass.async_add_executor_job(_card_digest)
+    add_extra_js_url(hass, f"{CARD_URL}?v={version}-{digest}")
+
+
+def _card_digest() -> str:
+    return hashlib.sha256(CARD_PATH.read_bytes()).hexdigest()[:8]
 
 
 async def async_setup_entry(

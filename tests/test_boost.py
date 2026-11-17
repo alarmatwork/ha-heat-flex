@@ -146,6 +146,9 @@ async def test_dashboard_card_registered(hass: HomeAssistant):
     assert paths[0].path.endswith("frontend/solar-floor-boost-card.js")
     (_, url), _ = add_js.call_args
     assert url.startswith("/solar_floor_boost/solar-floor-boost-card.js?v=")
+    # version-hash, so a changed file gets a new URL even at the same version
+    import re
+    assert re.fullmatch(r".*\?v=\d+\.\d+\.\d+-[0-9a-f]{8}", url), url
 
 
 async def test_duration_15_minutes(hass: HomeAssistant, freezer):
