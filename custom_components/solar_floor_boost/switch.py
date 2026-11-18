@@ -40,7 +40,12 @@ class ModeSwitch(BoostEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return self._manager.start_attributes(self._mode)
+        # The amount applied plus who started it; the history card reads these
+        # from the recorder to describe each period.
+        return {
+            "delta": self._manager.active_delta if self.is_on else None,
+            **self._manager.start_attributes(self._mode),
+        }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         # ``_context`` is the context of the turn_on call targeting this entity.

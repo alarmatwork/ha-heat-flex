@@ -495,6 +495,10 @@ async def test_card_version_matches_manifest_and_device(hass: HomeAssistant):
     entry, calls = await _setup(hass)
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
     assert device.sw_version == manifest
+    # Both ready-made cards are defined and offered in the card picker.
+    for card_type in ("solar-floor-boost-card", "solar-floor-boost-history-card"):
+        assert f'registry.define("{card_type}"' in card
+        assert f'type: "{card_type}"' in card
 
 
 BOOST_ENDS, SETBACK_ENDS = "sensor.solar_floor_boost_boost_ends", "sensor.solar_floor_boost_setback_ends"
@@ -522,9 +526,11 @@ async def test_start_records_automation_name_and_parameters(hass: HomeAssistant,
     assert attrs["command"] == "solar_floor_boost.start_setback"
     assert attrs["parameters"] == {"delta": 2.0, "duration": 30.0, "climate_entities": [A]}
     assert attrs["started_at"] is not None
-    # Same on the switch (the card reads it there); nothing on the other mode.
+    # Same on the switch (the cards read it there), plus the amount applied;
+    # nothing on the other mode.
     switch_attrs = hass.states.get(SETBACK).attributes
     assert {k: switch_attrs[k] for k in EMPTY_START} == {k: attrs[k] for k in EMPTY_START}
+    assert switch_attrs["delta"] == 2.0 and hass.states.get(BOOST).attributes["delta"] is None
     assert {k: hass.states.get(BOOST).attributes[k] for k in EMPTY_START} == EMPTY_START
     assert "deprecated" not in caplog.text
     assert "started by automation 'Expensive energy' via solar_floor_boost.start_setback" in caplog.text

@@ -436,6 +436,325 @@ class SolarFloorBoostDurationRow extends HTMLElement {
   }
 }
 
+// --- History card -----------------------------------------------------------
+// One line for the day: red blocks while a boost ran, blue while a setback
+// did, a "now" marker, and a tooltip per block with who started it, the
+// amount and the times. Data comes from the recorder's history of the two
+// switches, whose attributes say who started each session.
+//   type: custom:solar-floor-boost-history-card
+//   title: Floor heating today   # optional
+//   days: 1                      # optional: 1 = today, 2 = since yesterday, ...
+
+const HISTORY_COLORS = {
+  boost: "var(--solar-floor-boost-boost-color, var(--error-color, #db4437))",
+  setback: "var(--solar-floor-boost-setback-color, var(--info-color, #4285f4))",
+};
+const HOUR = 3600000;
+
+// Local midnight ``daysAgo`` days before today.
+function midnight(daysAgo) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysAgo);
+  return d;
+}
+
+function timeFormatter(hass, withDate) {
+  const tf = hass.locale?.time_format;
+  const hour12 = tf === "12" ? true : tf === "24" ? false : undefined;
+  return new Intl.DateTimeFormat(hass.locale?.language || undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12,
+    ...(withDate ? { weekday: "short" } : {}),
+  });
+}
+
+// "Started by Solar surplus", "Started manually", "Started by an automation"
+// (startedBy above), with the command for the automation cases.
+function startedByLine(attributes) {
+  const who = startedBy(attributes);
+  if (!who) return "";
+  return attributes.started_by === "manual" || !attributes.command
+    ? who
+    : `${who} (${attributes.command})`;
+}
+
+class SolarFloorBoostHistoryCard extends HTMLElement {
+  static getStubConfig() {
+    return { title: "Floor heating today" };
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this._days = Math.max(1, Math.min(14, Number(this._config.days) || 1));
+    this._periods = undefined;
+    this._fetched = 0;
+    this._render();
+  }
+
+  set hass(hass) {
+    const previous = this._hass;
+    this._hass = hass;
+    if (!this._card) this._render();
+    const ids = (this._ids = this._ids || findEntities(hass));
+    // Refetch when a switch changed state, after a minute, or on a new day;
+    // otherwise only move the "now" marker.
+    const changed = ["boost", "setback"].some(
+      (m) => hass.states[ids[m]]?.last_changed !== previous?.states[ids[m]]?.last_changed
+    );
+    const stale = Date.now() - this._fetched > 60000;
+    if (changed || stale) this._fetch();
+    else this._draw();
+  }
+
+  connectedCallback() {
+    this._timer = setInterval(() => this._hass && this._fetch(), 60000);
+    this._resize = new ResizeObserver(() => this._draw());
+    this._resize.observe(this);
+  }
+
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._resize?.disconnect();
+    document.removeEventListener("click", this._onDocClick);
+  }
+
+  _render() {
+    const style = document.createElement("style");
+    style.textContent = `
+      .content { padding: 0 16px 12px; }
+      svg { display: block; width: 100%; overflow: visible; }
+      .axis { stroke: var(--secondary-text-color); stroke-width: 2; }
+      .tick { stroke: var(--secondary-text-color); stroke-width: 2; }
+      .label { fill: var(--primary-text-color); font-size: 14px; }
+      .now-line { stroke: var(--primary-color); stroke-width: 2; stroke-dasharray: 4 3; }
+      .now-tag { fill: var(--primary-color); }
+      .now-text { fill: var(--text-primary-color, #fff); font-size: 12px; }
+      .block { stroke-width: 2; cursor: pointer; }
+      .block:hover { filter: brightness(1.25); }
+      .empty { color: var(--secondary-text-color); font-size: 14px; padding: 8px 0 12px; }
+      .legend {
+        display: flex; justify-content: center; gap: 24px; margin-top: 8px;
+        font-size: 14px; color: var(--primary-text-color);
+      }
+      .legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6); }
+      .tip {
+        position: fixed; z-index: 10; max-width: min(320px, calc(100vw - 32px));
+        padding: 10px 12px; border-radius: var(--ha-card-border-radius, 12px);
+        background: var(--card-background-color, #fff);
+        color: var(--primary-text-color);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--divider-color);
+        font-size: 0.9em; line-height: 1.4; white-space: pre-line;
+      }
+      .tip[hidden] { display: none; }
+    `;
+    const card = document.createElement("ha-card");
+    card.header = this._config.title ?? "Floor heating today";
+    this._content = Object.assign(document.createElement("div"), { className: "content" });
+    this._svgHost = document.createElement("div");
+    this._legend = Object.assign(document.createElement("div"), { className: "legend" });
+    for (const [mode, name] of [["boost", "Boost"], ["setback", "Setback"]]) {
+      const item = document.createElement("span");
+      const dot = Object.assign(document.createElement("i"), { className: "dot" });
+      dot.style.background = HISTORY_COLORS[mode];
+      item.append(dot, name);
+      this._legend.append(item);
+    }
+    this._tip = Object.assign(document.createElement("div"), { className: "tip", hidden: true });
+    this._tip.setAttribute("role", "tooltip");
+    this._onDocClick = (ev) => {
+      if (!ev.composedPath().some((el) => el.classList?.contains("block"))) this._hideTip();
+    };
+    document.addEventListener("click", this._onDocClick);
+    this._content.append(this._svgHost, this._legend);
+    card.append(style, this._content, this._tip);
+    this.replaceChildren(card);
+    this._card = card;
+  }
+
+  async _fetch() {
+    const hass = this._hass;
+    const ids = this._ids;
+    this._fetched = Date.now();
+    const start = midnight(this._days - 1);
+    const end = new Date(start.getTime() + this._days * 24 * HOUR);
+    let result;
+    try {
+      result = await hass.callWS({
+        type: "history/history_during_period",
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        entity_ids: [ids.boost, ids.setback],
+        include_start_time_state: true,
+        significant_changes_only: false,
+        minimal_response: false,
+        no_attributes: false,
+      });
+    } catch (e) {
+      // Recorder disabled or an old frontend: show the live state at least.
+      result = {};
+    }
+    const periods = [];
+    for (const mode of ["boost", "setback"]) {
+      const entries = result[ids[mode]] || [];
+      entries.forEach((entry, i) => {
+        if (entry.s !== "on") return;
+        const from = (entry.lc ?? entry.lu) * 1000;
+        const next = entries[i + 1];
+        const to = next ? (next.lc ?? next.lu) * 1000 : undefined; // undefined: still on
+        periods.push({ mode, from, to, attributes: entry.a || {} });
+      });
+      // Nothing recorded (recorder off) but the switch is on right now.
+      const state = hass.states[ids[mode]];
+      if (!entries.length && state?.state === "on") {
+        periods.push({
+          mode,
+          from: new Date(state.last_changed).getTime(),
+          to: undefined,
+          attributes: state.attributes,
+        });
+      }
+    }
+    this._periods = periods;
+    this._draw();
+  }
+
+  _draw() {
+    if (!this._hass || !this._svgHost) return;
+    const width = this._content.clientWidth || 300;
+    const start = midnight(this._days - 1).getTime();
+    const span = this._days * 24 * HOUR;
+    const now = Date.now();
+    const left = 8;
+    const right = 8;
+    const plotW = Math.max(50, width - left - right);
+    const top = 30;
+    const axisY = 100;
+    const height = 140;
+    const x = (t) => left + ((Math.min(Math.max(t, start), start + span) - start) / span) * plotW;
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("height", height);
+    const el = (tag, attrs, text) => {
+      const node = document.createElementNS(ns, tag);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      if (text !== undefined) node.textContent = text;
+      svg.append(node);
+      return node;
+    };
+
+    // Axis with a tick every 4 hours (every 12 for several days).
+    el("line", { class: "axis", x1: left, x2: left + plotW, y1: axisY, y2: axisY });
+    const tickEvery = (this._days > 2 ? 12 : this._days > 1 ? 6 : 4) * HOUR;
+    const fmt = timeFormatter(this._hass, this._days > 1);
+    for (let t = start + tickEvery; t < start + span; t += tickEvery) {
+      el("line", { class: "tick", x1: x(t), x2: x(t), y1: axisY, y2: axisY + 8 });
+      el("text", { class: "label", x: x(t), y: axisY + 28, "text-anchor": "middle" }, fmt.format(new Date(t)));
+    }
+
+    // Blocks.
+    const timeFmt = timeFormatter(this._hass, this._days > 1);
+    for (const period of this._periods || []) {
+      const from = Math.max(period.from, start);
+      const to = Math.min(period.to ?? now, start + span);
+      if (to <= from) continue;
+      const rect = el("rect", {
+        class: "block",
+        x: x(from),
+        y: top,
+        width: Math.max(2, x(to) - x(from)),
+        height: axisY - top,
+        fill: HISTORY_COLORS[period.mode],
+        "fill-opacity": 0.6,
+        stroke: HISTORY_COLORS[period.mode],
+        tabindex: 0,
+      });
+      const text = this._describe(period, timeFmt);
+      const show = () => this._showTip(rect, text);
+      rect.addEventListener("mouseenter", show);
+      rect.addEventListener("focus", show);
+      rect.addEventListener("mouseleave", () => this._hideTip());
+      rect.addEventListener("blur", () => this._hideTip());
+      rect.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._tip.hidden ? show() : this._hideTip();
+      });
+    }
+
+    // "now" marker, only inside the shown span.
+    if (now >= start && now <= start + span) {
+      const nx = x(now);
+      el("line", { class: "now-line", x1: nx, x2: nx, y1: top - 10, y2: axisY });
+      const tagW = 34;
+      const tagX = Math.min(nx - tagW / 2, left + plotW - tagW);
+      el("rect", { class: "now-tag", x: Math.max(left, tagX), y: 2, width: tagW, height: 18, rx: 4 });
+      el("text", { class: "now-text", x: Math.max(left, tagX) + tagW / 2, y: 15, "text-anchor": "middle" }, "now");
+    }
+
+    this._svgHost.replaceChildren(svg);
+    const empty = this._periods && !this._periods.length;
+    this._legend.hidden = false;
+    if (empty && !this._empty) {
+      this._empty = Object.assign(document.createElement("div"), {
+        className: "empty",
+        textContent: this._days > 1 ? "No boost or setback in this period." : "No boost or setback yet today.",
+      });
+      this._content.prepend(this._empty);
+    } else if (!empty && this._empty) {
+      this._empty.remove();
+      this._empty = undefined;
+    }
+  }
+
+  // Tooltip text: mode and amount, times, who started it, parameters given.
+  _describe(period, fmt) {
+    const a = period.attributes || {};
+    const unit = this._hass.config?.unit_system?.temperature || "";
+    const sign = period.mode === "setback" ? "−" : "+";
+    const amount = a.delta != null ? ` ${sign}${a.delta} ${unit}`.trimEnd() : "";
+    const name = period.mode === "setback" ? "Setback" : "Boost";
+    const when = `${fmt.format(new Date(period.from))} – ${period.to ? fmt.format(new Date(period.to)) : "now"}`;
+    const lines = [`${name}${amount}`, when];
+    const who = startedByLine(a);
+    if (who) lines.push(who);
+    const params = a.parameters && Object.keys(a.parameters).length
+      ? Object.entries(a.parameters)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+          .join(", ")
+      : undefined;
+    if (params) lines.push(params);
+    return lines.join("\n");
+  }
+
+  _showTip(anchor, text) {
+    this._tip.textContent = text;
+    this._tip.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    const width = this._tip.offsetWidth;
+    const height = this._tip.offsetHeight;
+    const above = r.top - height - 6;
+    this._tip.style.top = `${above > 8 ? above : r.bottom + 6}px`;
+    const center = r.left + r.width / 2 - width / 2;
+    this._tip.style.left = `${Math.max(16, Math.min(center, window.innerWidth - width - 16))}px`;
+  }
+
+  _hideTip() {
+    this._tip.hidden = true;
+  }
+
+  getCardSize() {
+    return 3;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: 3 };
+  }
+}
+
 // The frontend's app bundle installs a scoped custom element registry
 // polyfill that replaces window.customElements. This module is loaded in
 // parallel and can run first; elements defined on the old registry are then
@@ -464,24 +783,31 @@ function register() {
   }
   if (registry.get("solar-floor-boost-card")) return;
   registry.define("solar-floor-boost-card", SolarFloorBoostCard);
+  registry.define("solar-floor-boost-history-card", SolarFloorBoostHistoryCard);
   window.customCards = window.customCards || [];
-  window.customCards.push({
-    type: "solar-floor-boost-card",
-    name: "Solar Floor Boost",
-    description: "Boost or set back the floor heating: amount, duration, and when it ends.",
-    preview: true,
-    // HA 2026.6+: offer this card in "By entity" for any of our entities.
-    getEntitySuggestion: (hass, entityId) =>
-      hass.entities?.[entityId]?.platform === DOMAIN
-        ? [
-            {
-              label: "Solar Floor Boost",
-              config: { type: "custom:solar-floor-boost-card" },
-            },
-          ]
-        : null,
-    documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost",
-  });
+  // HA 2026.6+: offer the cards in "By entity" for any of our entities.
+  const suggest = (label, type) => (hass, entityId) =>
+    hass.entities?.[entityId]?.platform === DOMAIN
+      ? [{ label, config: { type: `custom:${type}` } }]
+      : null;
+  window.customCards.push(
+    {
+      type: "solar-floor-boost-card",
+      name: "Solar Floor Boost",
+      description: "Boost or set back the floor heating: amount, duration, and when it ends.",
+      preview: true,
+      getEntitySuggestion: suggest("Solar Floor Boost", "solar-floor-boost-card"),
+      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost",
+    },
+    {
+      type: "solar-floor-boost-history-card",
+      name: "Solar Floor Boost History",
+      description: "Today's boosts (red) and setbacks (blue) on a timeline; each block shows who started it, the amount and the times.",
+      preview: true,
+      getEntitySuggestion: suggest("Solar Floor Boost History", "solar-floor-boost-history-card"),
+      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
+    }
+  );
 }
 
 whenAppReady().then(register);

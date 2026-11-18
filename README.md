@@ -58,8 +58,8 @@ later via **Configure**.
 
 | Entity | Purpose |
 | --- | --- |
-| `switch.solar_floor_boost_boost` | On starts a boost with the amount and duration below; off stops it and restores the original targets. Turning it on during a setback ends the setback. |
-| `switch.solar_floor_boost_setback` | On starts a setback with the same amount and duration; off stops it and restores the original targets. Turning it on during a boost ends the boost. |
+| `switch.solar_floor_boost_boost` | On starts a boost with the amount and duration below; off stops it and restores the original targets. Turning it on during a setback ends the setback. While on, attributes say who started it and with what (see [Automations](#automations)). |
+| `switch.solar_floor_boost_setback` | On starts a setback with the same amount and duration; off stops it and restores the original targets. Turning it on during a boost ends the boost. Same attributes. |
 | `number.solar_floor_boost_amount` | Degrees to add (boost) or subtract (setback): default 1 °C in 0.5 steps, or 2 °F in whole degrees. |
 | `number.solar_floor_boost_duration` | Hours in 15-minute steps, shown as "4h 45m" (default 2h, max 12h). The dashboard card shows it as a preset slider: 15m, 30m, 45m, 1h, 1h 30m, 2h, 2h 30m, 3h, 3h 30m, 4h, 5h, 6h, 8h, 12h. Up to 1.5.x this entity was in minutes. |
 | `sensor.solar_floor_boost_boost_ends` | When the boost ends. Attributes list each thermostat's original (`baseline`) and boosted (`target`) value. |
@@ -122,6 +122,26 @@ entities:
       format: relative
 ```
 
+### History card
+
+A second ready-made card draws the day as a timeline: red blocks while a
+boost ran, blue while a setback did, and a "now" marker. Hover or tap a block
+and it tells who started that session, the amount, the start and end time,
+and the fields the caller gave. Edit dashboard → **Add card** →
+**Solar Floor Boost History**.
+
+```yaml
+type: custom:solar-floor-boost-history-card
+title: Floor heating today  # optional
+days: 1                     # optional: 1 = today, 2 = since yesterday, ... up to 14
+```
+
+The card reads the recorder's history of the two switches, so it needs the
+recorder (on by default) and shows sessions as far back as it keeps data.
+Colours follow the theme's `--error-color` and `--info-color`; override them
+with `--solar-floor-boost-boost-color` and `--solar-floor-boost-setback-color`
+in a theme.
+
 ## Actions
 
 ```yaml
@@ -158,7 +178,54 @@ Each `stop` action only ends its own mode, so an automation that stops the
 boost never cuts a setback short, and vice versa. Starting one mode while the
 other runs ends the other first.
 
-### Who started it
+## Automations
+
+The integration is built to be driven by automations: you decide *when*
+energy is plentiful or scarce, it handles the thermostats. The rules below
+are everything an automation needs to know; for a machine-readable version
+of the same, see the [integration guide](docs/integration-guide.md).
+
+### How to call it
+
+Use the actions, not the switches. An action takes the amount, the duration
+and the thermostats for this one session, and it can say who is calling:
+
+```yaml
+actions:
+  - action: solar_floor_boost.start          # or solar_floor_boost.start_setback
+    data:
+      delta: 1.5                             # optional: degrees, defaults to the Amount entity
+      duration: 90                           # optional: minutes, defaults to the Duration entity
+      climate_entities:                      # optional: defaults to all configured thermostats
+        - climate.living_room
+      automation: "{{ this.attributes.friendly_name }}"   # who is calling (see below)
+```
+
+- Omit `delta` and `duration` to let the user tune them in the card. Give
+  them when the automation knows better (a short setback for a 15-minute
+  price peak).
+- `solar_floor_boost.stop` and `solar_floor_boost.stop_setback` end their own
+  mode only. A stop for the other mode does nothing, so an automation can't
+  accidentally cut the other one short.
+- Starting a mode that is already running applies the new amount to the
+  original targets (no stacking) and restarts the timer from now. Starting
+  the other mode ends the running one first.
+- `switch.turn_on` on the Boost/Setback switch also works, with the Amount and
+  Duration entities, but it can't carry a name, so prefer the actions.
+
+### Say who is calling
+
+Give the `automation` field in every automation and script that calls a
+start action. `"{{ this.attributes.friendly_name }}"` fills in the
+automation's own name, so the line can be copied unchanged into any
+automation. A script can use its own name the same way, or any text.
+
+Calling a start action from an automation **without** the field still works
+but is deprecated: the entities can then only say "Started by an
+automation", and the first such call after a restart logs a warning with
+the line to add.
+
+### What gets recorded
 
 Every start is recorded, so when a boost or setback appears out of nowhere
 you can see where it came from. The `Boost`/`Setback` switch and the
@@ -168,23 +235,44 @@ you can see where it came from. The `Boost`/`Setback` switch and the
 | Attribute | Example |
 |---|---|
 | `started_at` | `2026-11-18T09:30:00+00:00` |
-| `started_by` | `manual` (a person: the card, the more-info dialog, developer tools) or `automation` (an automation or script) |
-| `automation` | `Solar surplus - boost floor heating`, the name the automation gave in the `automation` field, otherwise `null` |
+| `started_by` | `manual` (a person: the card, the more-info dialog, developer tools) or `automation` (an automation or script, decided from the call's context) |
+| `automation` | `Solar surplus - boost floor heating`, the name given in the `automation` field, otherwise `null` |
 | `command` | `solar_floor_boost.start`, `solar_floor_boost.start_setback` or `switch.turn_on` |
 | `parameters` | `{"delta": 2, "duration": 120}`: the fields given with the action, not the defaults filled in |
+| `delta` | `2`: the amount actually applied (switch only; the sensor has it too) |
 
-The card shows the same under the switch while the mode runs ("Started by
-Solar surplus - boost floor heating", "Started manually"), and the Home
-Assistant log gets one line per start with all of it.
+Where to look:
 
-Give the `automation` field in every automation and script that calls a
-start action. `"{{ this.attributes.friendly_name }}"` fills in the
-automation's own name, so the line can be copied as is. Calling a start
-action from an automation **without** the field still works but is
-deprecated: the entities can only say "Started by an automation", and the
-first such call after a restart logs a warning. Turning the switch on from
-an automation is recorded as `switch.turn_on` by an automation without a
-name; use the start action in automations instead.
+- **The card** shows "Started by Solar surplus - boost floor heating" or
+  "Started manually" under the switch while the mode runs.
+- **The history card** shows the day's sessions as blocks; each block's
+  tooltip has the same information plus the start and end time.
+- **The log** gets one line per start:
+  `Boost +1.0°C until 11:30 for ['climate.living_room'], started by automation 'Solar surplus' via solar_floor_boost.start {'duration': 120}`.
+- **Automations** can use the attributes too, e.g. a condition that only
+  stops a setback its own automation started:
+
+```yaml
+conditions:
+  - condition: template
+    value_template: >-
+      {{ state_attr('switch.solar_floor_boost_setback', 'automation')
+         == this.attributes.friendly_name }}
+```
+
+### Useful conditions and triggers
+
+- `switch.solar_floor_boost_boost` / `..._setback` is `on` while the mode
+  runs: a condition for "not already running", or a trigger for "it ended".
+- `sensor.solar_floor_boost_boost_ends` / `..._setback_ends` is the end time
+  (a timestamp sensor), `unknown` when the mode is not running. Its
+  attributes `boosted` / `setback` list each thermostat's original
+  `baseline` and current `target`; `pending_restore` lists thermostats that
+  couldn't be restored yet (unavailable).
+- A boost lasts `duration` minutes and then ends by itself. For "as long as
+  the condition holds", re-trigger every few minutes and start again when
+  the switch is `off` (the examples below do this), or start once and stop
+  with the stop action when the condition clears.
 
 ## Example automation: boost with solar surplus
 
@@ -283,6 +371,15 @@ moves the targets down instead of up.
   unit system later, the saved amount is converted; re-check the two limits
   under **Configure**.
 - Removing the integration restores all thermostats.
+
+## Integration guide for LLMs
+
+[docs/integration-guide.md](docs/integration-guide.md) is a compact,
+self-contained description of the integration: entities, actions and their
+fields, attributes, rules, and the recommended automation patterns. Paste it
+into the prompt (or point the assistant at the file) when you ask an LLM to
+write automations, scripts or dashboards for Solar Floor Boost; it has
+everything needed without reading the code.
 
 ## Development
 
