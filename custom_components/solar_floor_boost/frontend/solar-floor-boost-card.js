@@ -5,7 +5,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "1.9.0";
+const CARD_VERSION = "1.9.1";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -322,9 +322,10 @@ class SolarFloorBoostSwitchRow extends HTMLElement {
     const hide = () => {
       this._tip.hidden = true;
     };
-    this._info.addEventListener("mouseenter", show);
-    this._info.addEventListener("mouseleave", hide);
-    this._info.addEventListener("focus", show);
+    // Hover for a real mouse only: a tap on a phone fires mouseenter and then
+    // click, which would show and hide it at once. A tap or click toggles.
+    this._info.addEventListener("pointerenter", (ev) => ev.pointerType === "mouse" && show());
+    this._info.addEventListener("pointerleave", (ev) => ev.pointerType === "mouse" && hide());
     this._info.addEventListener("blur", hide);
     this._info.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -531,7 +532,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
       .now-line { stroke: var(--primary-color); stroke-width: 2; stroke-dasharray: 4 3; }
       .now-tag { fill: var(--primary-color); }
       .now-text { fill: var(--text-primary-color, #fff); font-size: 12px; }
-      .block { stroke-width: 2; cursor: pointer; }
+      .block { stroke-width: 2; cursor: pointer; touch-action: manipulation; }
       .block:hover { filter: brightness(1.25); }
       .empty { color: var(--secondary-text-color); font-size: 14px; padding: 8px 0 12px; }
       .legend {
@@ -675,14 +676,22 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
       });
       const text = this._describe(period, timeFmt);
       const show = () => this._showTip(rect, text);
-      rect.addEventListener("mouseenter", show);
-      rect.addEventListener("focus", show);
-      rect.addEventListener("mouseleave", () => this._hideTip());
-      rect.addEventListener("blur", () => this._hideTip());
+      const toggle = () => (this._tip.hidden || this._tipFor !== rect ? show() : this._hideTip());
+      // A tap on a phone fires mouseenter and then click, so hover is for a
+      // real mouse only; a tap, a click or Enter toggles.
+      rect.addEventListener("pointerenter", (ev) => ev.pointerType === "mouse" && show());
+      rect.addEventListener("pointerleave", (ev) => ev.pointerType === "mouse" && this._hideTip());
       rect.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this._tip.hidden ? show() : this._hideTip();
+        toggle();
       });
+      rect.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          toggle();
+        }
+      });
+      rect.addEventListener("blur", () => this._tipFor === rect && this._hideTip());
     }
 
     // "now" marker, only inside the shown span.
@@ -731,6 +740,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
   }
 
   _showTip(anchor, text) {
+    this._tipFor = anchor;
     this._tip.textContent = text;
     this._tip.hidden = false;
     const r = anchor.getBoundingClientRect();
@@ -744,6 +754,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
 
   _hideTip() {
     this._tip.hidden = true;
+    this._tipFor = undefined;
   }
 
   getCardSize() {
