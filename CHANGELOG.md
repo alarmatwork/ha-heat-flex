@@ -5,6 +5,12 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [1.9.1](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.9.1) - 2026-11-18
+
+### Fixed
+
+- Fix tooltips on phones: a tap on a history block or an (i) hint showed and hid the tooltip at once; hover is now for a mouse only and a tap toggles (1.9.1)
+
 ## [1.9.0](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.9.0) - 2026-11-18
 
 ### Added
