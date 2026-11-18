@@ -5,6 +5,16 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [1.8.0](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.8.0) - 2026-11-18
+
+### Added
+
+- Add who-started-it tracking: each boost or setback records the command, its parameters, manual or automation, and the automation's name from the new 'automation' field of the start actions (shown on the card and the entities; calling without the field still works but is deprecated)
+
+### Documentation
+
+- Screenshots of the card with Setback and of thermostats during a setback
+
 ## [1.7.3](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.7.3) - 2026-11-17
 
 ### Added
