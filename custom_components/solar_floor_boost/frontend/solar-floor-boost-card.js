@@ -51,6 +51,17 @@ function findEntities(hass) {
   return ids;
 }
 
+// "Started manually" / "Started by automation X", from the switch's attributes.
+function startedBy(attributes) {
+  if (attributes.started_by === "manual") return "Started manually";
+  if (attributes.started_by === "automation") {
+    return attributes.automation
+      ? `Started by ${attributes.automation}`
+      : "Started by an automation";
+  }
+  return undefined;
+}
+
 function switchRow(ids, mode) {
   return {
     type: "custom:solar-floor-boost-switch-row",
@@ -244,9 +255,14 @@ class SolarFloorBoostSwitchRow extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._row) this._render();
+    const stateObj = hass.states[this._config.entity];
     this._row.hass = hass;
+    // Who started it, under the name while the mode runs (for debugging
+    // automations; see the "automation" field of the start actions).
+    this._row.secondaryText =
+      stateObj?.state === "on" ? startedBy(stateObj.attributes) : undefined;
     this._toggle.hass = hass;
-    this._toggle.stateObj = hass.states[this._config.entity];
+    this._toggle.stateObj = stateObj;
   }
 
   _render() {

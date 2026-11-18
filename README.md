@@ -131,6 +131,7 @@ data:
   duration: 120     # minutes (any value), optional, defaults to Duration
   climate_entities: # optional, defaults to all configured thermostats
     - climate.living_room
+  automation: "{{ this.attributes.friendly_name }}"  # who is calling, see below
 ```
 
 ```yaml
@@ -146,6 +147,7 @@ data:
   duration: 60      # minutes (any value), optional, defaults to Duration
   climate_entities: # optional, defaults to all configured thermostats
     - climate.living_room
+  automation: "{{ this.attributes.friendly_name }}"
 ```
 
 ```yaml
@@ -155,6 +157,34 @@ action: solar_floor_boost.stop_setback
 Each `stop` action only ends its own mode, so an automation that stops the
 boost never cuts a setback short, and vice versa. Starting one mode while the
 other runs ends the other first.
+
+### Who started it
+
+Every start is recorded, so when a boost or setback appears out of nowhere
+you can see where it came from. The `Boost`/`Setback` switch and the
+`Boost ends`/`Setback ends` sensor of the running mode carry these attributes
+(they survive a restart and are cleared when the session ends):
+
+| Attribute | Example |
+|---|---|
+| `started_at` | `2026-11-18T09:30:00+00:00` |
+| `started_by` | `manual` (a person: the card, the more-info dialog, developer tools) or `automation` (an automation or script) |
+| `automation` | `Solar surplus - boost floor heating`, the name the automation gave in the `automation` field, otherwise `null` |
+| `command` | `solar_floor_boost.start`, `solar_floor_boost.start_setback` or `switch.turn_on` |
+| `parameters` | `{"delta": 2, "duration": 120}`: the fields given with the action, not the defaults filled in |
+
+The card shows the same under the switch while the mode runs ("Started by
+Solar surplus - boost floor heating", "Started manually"), and the Home
+Assistant log gets one line per start with all of it.
+
+Give the `automation` field in every automation and script that calls a
+start action. `"{{ this.attributes.friendly_name }}"` fills in the
+automation's own name, so the line can be copied as is. Calling a start
+action from an automation **without** the field still works but is
+deprecated: the entities can only say "Started by an automation", and the
+first such call after a restart logs a warning. Turning the switch on from
+an automation is recorded as `switch.turn_on` by an automation without a
+name; use the start action in automations instead.
 
 ## Example automation: boost with solar surplus
 

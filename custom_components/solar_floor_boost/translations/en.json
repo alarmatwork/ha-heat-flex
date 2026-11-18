@@ -82,6 +82,10 @@
         "climate_entities": {
           "name": "Thermostats",
           "description": "Only boost these. Defaults to all configured thermostats."
+        },
+        "automation": {
+          "name": "Automation",
+          "description": "Name of the automation or script that calls this action, e.g. {{ this.attributes.friendly_name }}. Shown on the Boost/Setback entities and in the log so you can see who started it. Automations should always give it; calling without it is deprecated."
         }
       }
     },
@@ -104,6 +108,10 @@
         "climate_entities": {
           "name": "Thermostats",
           "description": "Only set back these. Defaults to all configured thermostats."
+        },
+        "automation": {
+          "name": "Automation",
+          "description": "Name of the automation or script that calls this action, e.g. {{ this.attributes.friendly_name }}. Shown on the Boost/Setback entities and in the log so you can see who started it. Automations should always give it; calling without it is deprecated."
         }
       }
     },

@@ -43,3 +43,5 @@ actions:
   - action: solar_floor_boost.start
     data:
       duration: 120
+      # Tell the integration who started the boost; shown on the card
+      automation: "{{ this.attributes.friendly_name }}"

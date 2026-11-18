@@ -56,4 +56,5 @@ class EndSensor(BoostEntity, SensorEntity):
             if self._mine
             else {},
             "pending_restore": manager.pending_restore if self._mine else [],
+            **manager.start_attributes(self._mode),
         }

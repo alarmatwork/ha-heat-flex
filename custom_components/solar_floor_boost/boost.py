@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 import logging
 from typing import Any
@@ -27,6 +27,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import (
     CALLBACK_TYPE,
+    Context,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -50,6 +51,8 @@ from .const import (
     DOMAIN,
     MODE_BOOST,
     MODE_SETBACK,
+    SOURCE_AUTOMATION,
+    SOURCE_MANUAL,
     STORAGE_VERSION,
 )
 from .units import temperature_units
@@ -67,6 +70,37 @@ class BoostedClimate:
 
     baseline: float
     target: float
+
+
+@dataclass
+class StartInfo:
+    """How the running session was started, for debugging.
+
+    ``command`` is the action or entity service used (``solar_floor_boost.start``,
+    ``switch.turn_on``), ``parameters`` the fields given with it (not the
+    defaults filled in), ``source`` whether a person or an automation issued
+    it, and ``automation`` the name the automation reported about itself.
+    """
+
+    command: str
+    source: str
+    automation: str | None = None
+    parameters: dict[str, Any] = field(default_factory=dict)
+    started_at: str | None = None
+
+    @property
+    def description(self) -> str:
+        """``manually``, ``by an automation`` or ``by automation 'X'``."""
+        if self.source == SOURCE_MANUAL:
+            return "manually"
+        if self.automation:
+            return f"by automation '{self.automation}'"
+        return "by an automation"
+
+
+def source_of(context: Context | None) -> str:
+    """Manual when a signed-in user issued the call, otherwise an automation."""
+    return SOURCE_MANUAL if context and context.user_id else SOURCE_AUTOMATION
 
 
 def _same(a: float, b: float) -> bool:
@@ -106,6 +140,8 @@ class BoostManager:
         self.active_delta: float | None = None
         self.ends_at: datetime | None = None
         self.boosted: dict[str, BoostedClimate] = {}
+        # How the session was started; kept as long as ``mode`` is.
+        self.started: StartInfo | None = None
 
         self._lock = asyncio.Lock()
         self._listeners: set[CALLBACK_TYPE] = set()
@@ -136,6 +172,17 @@ class BoostManager:
 
     def is_mode_active(self, mode: str) -> bool:
         return self.is_active and self.mode == mode
+
+    def start_attributes(self, mode: str) -> dict[str, Any]:
+        """State attributes describing who started ``mode`` (None if not it)."""
+        info = self.started if self.mode == mode else None
+        return {
+            "started_at": info.started_at if info else None,
+            "started_by": info.source if info else None,
+            "automation": info.automation if info else None,
+            "command": info.command if info else None,
+            "parameters": dict(info.parameters) if info else None,
+        }
 
     @property
     def pending_restore(self) -> list[str]:
@@ -178,6 +225,9 @@ class BoostManager:
         self.mode = data.get("mode") or (
             MODE_BOOST if (self.ends_at or self.boosted) else None
         )
+        # Saved by 1.7.x and older: nothing known about the start.
+        started = data.get("started")
+        self.started = StartInfo(**started) if started and self.mode else None
         if resume and (self.ends_at or self.boosted):
             # Thermostats may not be loaded yet; wait until HA has started.
             self._unsub_started = async_at_started(self.hass, self._async_resume)
@@ -209,17 +259,20 @@ class BoostManager:
         duration: float | None = None,
         entity_ids: list[str] | None = None,
         mode: str = MODE_BOOST,
+        info: StartInfo | None = None,
     ) -> None:
         """Move targets by ``delta`` degrees for ``duration`` minutes.
 
         A boost raises them, a setback lowers them. If the same mode is already
         running, the new delta is applied to the original baselines (not
         stacked) and the end time is reset to now + duration. If the other mode
-        is running, it is ended first and its thermostats restored.
+        is running, it is ended first and its thermostats restored. ``info``
+        says who asked for it; it is shown on the entities and in the log.
         """
         delta = self.delta if delta is None else delta
         duration = self.duration if duration is None else duration
         entity_ids = entity_ids or self.climate_entities
+        info = info or StartInfo(command="internal", source=SOURCE_AUTOMATION)
 
         async with self._lock:
             if self.mode is not None and self.mode != mode:
@@ -242,17 +295,22 @@ class BoostManager:
             self.mode = mode
             self.active_delta = delta
             self.ends_at = dt_util.utcnow() + timedelta(minutes=duration)
+            info.started_at = dt_util.utcnow().isoformat()
+            self.started = info
             self._schedule_end()
             self._update_pending_tracking()
             await self._async_save()
         _LOGGER.info(
-            "%s %s%s%s until %s for %s",
+            "%s %s%s%s until %s for %s, started %s via %s %s",
             mode.capitalize(),
             "-" if mode == MODE_SETBACK else "+",
             delta,
             self.units.unit,
             dt_util.as_local(self.ends_at),
             list(self.boosted),
+            info.description,
+            info.command,
+            info.parameters,
         )
         self._notify()
 
@@ -270,6 +328,12 @@ class BoostManager:
             _LOGGER.info("%s ended; waiting to restore %s", self.mode, list(self.boosted))
         self._notify()
 
+    @callback
+    def _clear_mode(self) -> None:
+        """Nothing left of the session: forget which mode it was and who started it."""
+        self.mode = None
+        self.started = None
+
     # --- internals -----------------------------------------------------------
 
     async def _async_end(self) -> None:
@@ -283,7 +347,7 @@ class BoostManager:
             *(self._async_restore(entity_id) for entity_id in list(self.boosted))
         )
         if not self.boosted:
-            self.mode = None
+            self._clear_mode()
         self._update_pending_tracking()
 
     async def _async_adjust(self, entity_id: str, delta: float, mode: str) -> bool:
@@ -405,7 +469,7 @@ class BoostManager:
                 return
             await self._async_restore(entity_id)
             if not self.boosted:
-                self.mode = None
+                self._clear_mode()
             self._update_pending_tracking()
             await self._async_save()
         self._notify()
@@ -421,6 +485,7 @@ class BoostManager:
             "mode": self.mode,
             "ends_at": self.ends_at.isoformat() if self.ends_at else None,
             "delta": self.active_delta,
+            "started": asdict(self.started) if self.started else None,
             "boosted": {
                 entity_id: asdict(rec) for entity_id, rec in self.boosted.items()
             },

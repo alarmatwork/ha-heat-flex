@@ -27,3 +27,5 @@ actions:
   - action: solar_floor_boost.start_setback
     data:
       duration: 60
+      # Tell the integration who started the setback; shown on the card
+      automation: "{{ this.attributes.friendly_name }}"

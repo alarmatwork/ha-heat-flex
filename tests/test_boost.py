@@ -351,6 +351,8 @@ async def test_storage_from_1_6_is_a_boost(hass: HomeAssistant, freezer):
     await hass.async_block_till_done()
     assert hass.states.get(BOOST).state == "on" and hass.states.get(SETBACK).state == "off"
     assert hass.states.get("sensor.solar_floor_boost_boost_ends").attributes["boosted"][A]["baseline"] == 22.0
+    # Nothing is known about how a 1.6.x boost was started.
+    assert hass.states.get(BOOST).attributes["started_by"] is None
     freezer.tick(timedelta(minutes=31))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
@@ -493,3 +495,89 @@ async def test_card_version_matches_manifest_and_device(hass: HomeAssistant):
     entry, calls = await _setup(hass)
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
     assert device.sw_version == manifest
+
+
+BOOST_ENDS, SETBACK_ENDS = "sensor.solar_floor_boost_boost_ends", "sensor.solar_floor_boost_setback_ends"
+EMPTY_START = {"started_at": None, "started_by": None, "automation": None, "command": None, "parameters": None}
+
+
+def _clear_deprecation_warnings():
+    from custom_components.solar_floor_boost import _unreported_warned
+
+    _unreported_warned.clear()
+
+
+async def test_start_records_automation_name_and_parameters(hass: HomeAssistant, caplog):
+    """An automation naming itself: the entities say who started it, no warning."""
+    _clear_deprecation_warnings()
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN, "start_setback",
+        {"delta": 2, "duration": 30, "climate_entities": [A], "automation": "Expensive energy"},
+        blocking=True,
+    )
+    attrs = hass.states.get(SETBACK_ENDS).attributes
+    assert attrs["started_by"] == "automation"
+    assert attrs["automation"] == "Expensive energy"
+    assert attrs["command"] == "solar_floor_boost.start_setback"
+    assert attrs["parameters"] == {"delta": 2.0, "duration": 30.0, "climate_entities": [A]}
+    assert attrs["started_at"] is not None
+    # Same on the switch (the card reads it there); nothing on the other mode.
+    switch_attrs = hass.states.get(SETBACK).attributes
+    assert {k: switch_attrs[k] for k in EMPTY_START} == {k: attrs[k] for k in EMPTY_START}
+    assert {k: hass.states.get(BOOST).attributes[k] for k in EMPTY_START} == EMPTY_START
+    assert "deprecated" not in caplog.text
+    assert "started by automation 'Expensive energy' via solar_floor_boost.start_setback" in caplog.text
+
+    await hass.services.async_call(DOMAIN, "stop_setback", {}, blocking=True)
+    assert {k: hass.states.get(SETBACK).attributes[k] for k in EMPTY_START} == EMPTY_START
+
+
+async def test_start_without_automation_name_is_deprecated(hass: HomeAssistant, caplog):
+    """The old way keeps working; one warning per action per run."""
+    _clear_deprecation_warnings()
+    await _setup(hass)
+    await hass.services.async_call(DOMAIN, "start", {"climate_entities": [A]}, blocking=True)
+    assert t(hass, A) == 23.0
+    attrs = hass.states.get(BOOST).attributes
+    assert attrs["started_by"] == "automation" and attrs["automation"] is None
+    assert attrs["command"] == "solar_floor_boost.start"
+    assert attrs["parameters"] == {"climate_entities": [A]}
+    assert caplog.text.count("solar_floor_boost.start was called by an automation without the 'automation' field") == 1
+
+    await hass.services.async_call(DOMAIN, "start", {"climate_entities": [A]}, blocking=True)
+    assert caplog.text.count("without the 'automation' field") == 1
+
+
+async def test_switch_by_user_is_manual(hass: HomeAssistant, hass_admin_user, caplog):
+    """A person toggling the switch: manual, no warning."""
+    from homeassistant.core import Context
+
+    _clear_deprecation_warnings()
+    await _setup(hass)
+    user = Context(user_id=hass_admin_user.id)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": BOOST}, blocking=True, context=user)
+    attrs = hass.states.get(BOOST).attributes
+    assert attrs["started_by"] == "manual" and attrs["automation"] is None
+    assert attrs["command"] == "switch.turn_on" and attrs["parameters"] == {}
+    assert hass.states.get(BOOST_ENDS).attributes["started_by"] == "manual"
+    assert "started manually via switch.turn_on" in caplog.text
+    assert "deprecated" not in caplog.text
+
+    # A person using the action in developer tools is manual too, no warning.
+    await hass.services.async_call(DOMAIN, "start", {"delta": 1}, blocking=True, context=user)
+    assert hass.states.get(BOOST).attributes["started_by"] == "manual"
+    assert "deprecated" not in caplog.text
+
+
+async def test_start_info_survives_reload(hass: HomeAssistant):
+    entry, _ = await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN, "start", {"duration": 60, "automation": "Solar surplus"}, blocking=True
+    )
+    before = hass.states.get(BOOST).attributes
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    after = hass.states.get(BOOST).attributes
+    assert {k: after[k] for k in EMPTY_START} == {k: before[k] for k in EMPTY_START}
+    assert after["automation"] == "Solar surplus"

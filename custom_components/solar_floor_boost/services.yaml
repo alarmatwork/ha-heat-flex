@@ -22,6 +22,10 @@ start:
         entity:
           domain: climate
           multiple: true
+    automation:
+      example: "{{ this.attributes.friendly_name }}"
+      selector:
+        text:
 stop:
 start_setback:
   fields:
@@ -47,4 +51,8 @@ start_setback:
         entity:
           domain: climate
           multiple: true
+    automation:
+      example: "{{ this.attributes.friendly_name }}"
+      selector:
+        text:
 stop_setback:

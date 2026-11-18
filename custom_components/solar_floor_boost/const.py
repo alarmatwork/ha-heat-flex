@@ -17,6 +17,13 @@ DEFAULT_DURATION = 120  # minutes
 ATTR_DELTA = "delta"
 ATTR_DURATION = "duration"
 ATTR_CLIMATE_ENTITIES = "climate_entities"
+# Name of the automation (or script) starting a boost/setback, for debugging.
+ATTR_AUTOMATION = "automation"
+
+# Who started the running session: a person (UI, developer tools) or an
+# automation/script. Decided from the service call's context.
+SOURCE_MANUAL = "manual"
+SOURCE_AUTOMATION = "automation"
 
 SERVICE_START = "start"
 SERVICE_STOP = "stop"

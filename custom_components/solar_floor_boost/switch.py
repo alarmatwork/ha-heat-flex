@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import SolarFloorBoostConfigEntry
-from .boost import BoostManager
+from .boost import BoostManager, StartInfo, source_of
 from .const import MODE_BOOST, MODE_SETBACK
 from .entity import BoostEntity
 
@@ -38,8 +38,16 @@ class ModeSwitch(BoostEntity, SwitchEntity):
     def is_on(self) -> bool:
         return self._manager.is_mode_active(self._mode)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._manager.start_attributes(self._mode)
+
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._manager.async_start(mode=self._mode)
+        # ``_context`` is the context of the turn_on call targeting this entity.
+        await self._manager.async_start(
+            mode=self._mode,
+            info=StartInfo(command="switch.turn_on", source=source_of(self._context)),
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._manager.async_stop(self._mode)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 
 import voluptuous as vol
@@ -19,19 +20,23 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
-from .boost import BoostManager
+from .boost import BoostManager, StartInfo, source_of
 from .const import (
+    ATTR_AUTOMATION,
     ATTR_CLIMATE_ENTITIES,
     ATTR_DELTA,
     ATTR_DURATION,
     DOMAIN,
     MODE_BOOST,
     MODE_SETBACK,
+    SOURCE_AUTOMATION,
     SERVICE_START,
     SERVICE_START_SETBACK,
     SERVICE_STOP,
     SERVICE_STOP_SETBACK,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.NUMBER, Platform.SENSOR, Platform.SWITCH]
 
@@ -50,8 +55,13 @@ START_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=1, max=1440)
         ),
         vol.Optional(ATTR_CLIMATE_ENTITIES): cv.entities_domain(CLIMATE_DOMAIN),
+        vol.Optional(ATTR_AUTOMATION): cv.string,
     }
 )
+
+# Start actions already warned about for being called by an automation that
+# doesn't name itself (once per action per run, not on every call).
+_unreported_warned: set[str] = set()
 
 type SolarFloorBoostConfigEntry = ConfigEntry[BoostManager]
 
@@ -73,6 +83,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 duration=call.data.get(ATTR_DURATION),
                 entity_ids=call.data.get(ATTR_CLIMATE_ENTITIES),
                 mode=mode,
+                info=_start_info(call),
             )
 
         return handler
@@ -93,6 +104,38 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         hass.services.async_register(DOMAIN, stop_service, stop(mode))
     await _async_register_card(hass)
     return True
+
+
+def _start_info(call: ServiceCall) -> StartInfo:
+    """Who issued a start action and with which fields.
+
+    An automation is expected to name itself in the ``automation`` field.
+    Calls without it keep working, but that way is deprecated: the entities
+    and the log can then only say "an automation".
+    """
+    automation = call.data.get(ATTR_AUTOMATION)
+    source = source_of(call.context)
+    if (
+        source == SOURCE_AUTOMATION
+        and not automation
+        and call.service not in _unreported_warned
+    ):
+        _unreported_warned.add(call.service)
+        _LOGGER.warning(
+            "%s.%s was called by an automation without the 'automation' field. "
+            "Add automation: \"{{ this.attributes.friendly_name }}\" to its data "
+            "so the %s entities show which automation started them; calling "
+            "without it is deprecated",
+            DOMAIN,
+            call.service,
+            DOMAIN,
+        )
+    return StartInfo(
+        command=f"{DOMAIN}.{call.service}",
+        source=source,
+        automation=automation,
+        parameters={k: v for k, v in call.data.items() if k != ATTR_AUTOMATION},
+    )
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
