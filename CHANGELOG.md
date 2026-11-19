@@ -1,9 +1,16 @@
 # Changelog
 
-What changed in each version of Solar Floor Boost. Generated from the
+What changed in each version of Heat Flex (Solar Floor Boost up to 1.10).
+Generated from the
 commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
+
+## [2.0.0](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v2.0.0) - 2026-11-19
+
+### Changed
+
+- Rename the project to Heat Flex: shift heating in time, for any thermostat. The domain, entity IDs and action names stay solar_floor_boost, old card types keep working as aliases, and the config entry is renamed on upgrade (2.0.0)
 
 ## [1.10.0](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.10.0) - 2026-11-19
 
