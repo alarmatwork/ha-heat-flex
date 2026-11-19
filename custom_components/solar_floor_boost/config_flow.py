@@ -1,4 +1,4 @@
-"""Config flow for Solar Floor Boost."""
+"""Config flow for Heat Flex."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
-from .const import CONF_CLIMATES, CONF_MAX_TEMPERATURE, CONF_MIN_TEMPERATURE, DOMAIN
+from .const import NAME, CONF_CLIMATES, CONF_MAX_TEMPERATURE, CONF_MIN_TEMPERATURE, DOMAIN
 from .units import temperature_units
 
 
@@ -46,14 +46,14 @@ def schema(hass: HomeAssistant) -> vol.Schema:
 
 class SolarFloorBoostConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
-    MINOR_VERSION = 4
+    MINOR_VERSION = 5
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
             return self.async_create_entry(
-                title="Solar Floor Boost", data={}, options=user_input
+                title=NAME, data={}, options=user_input
             )
         suggested = {CONF_CLIMATES: self.hass.states.async_entity_ids(CLIMATE_DOMAIN)}
         return self.async_show_form(

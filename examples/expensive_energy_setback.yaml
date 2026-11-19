@@ -1,4 +1,4 @@
-# Expensive energy -> lower floor heating (requires the Solar Floor Boost integration)
+# Expensive energy -> lower floor heating (requires the Heat Flex integration)
 # Paste into Settings > Automations > Create > ⋮ > Edit in YAML, then replace
 # the price sensor entity ID with your own (see the README).
 alias: "Expensive energy - set back floor heating"

@@ -1,6 +1,10 @@
-"""Constants for Solar Floor Boost."""
+"""Constants for Heat Flex."""
 
+# The domain keeps the original project name (Solar Floor Boost, up to
+# 1.10): it is in every unique ID, entity ID, action name and storage file.
 DOMAIN = "solar_floor_boost"
+NAME = "Heat Flex"
+LEGACY_NAME = "Solar Floor Boost"
 
 CONF_CLIMATES = "climate_entities"
 CONF_MAX_TEMPERATURE = "max_temperature"

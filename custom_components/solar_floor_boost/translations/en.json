@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Solar Floor Boost",
+        "title": "Heat Flex",
         "description": "Pick the thermostats to raise (boost) or lower (setback) for a while.",
         "data": {
           "climate_entities": "Thermostats",
@@ -16,13 +16,13 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Solar Floor Boost is already configured."
+      "single_instance_allowed": "Heat Flex is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Solar Floor Boost",
+        "title": "Heat Flex",
         "data": {
           "climate_entities": "Thermostats",
           "max_temperature": "Maximum boosted target",
@@ -63,7 +63,7 @@
   },
   "exceptions": {
     "not_loaded": {
-      "message": "Solar Floor Boost is not set up."
+      "message": "Heat Flex is not set up."
     }
   },
   "services": {

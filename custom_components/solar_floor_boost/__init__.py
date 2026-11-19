@@ -1,4 +1,4 @@
-"""Solar Floor Boost: temporarily raise (boost) or lower (setback) thermostat targets."""
+"""Heat Flex: temporarily raise (boost) or lower (setback) thermostat targets."""
 
 from __future__ import annotations
 
@@ -27,9 +27,11 @@ from .const import (
     ATTR_DELTA,
     ATTR_DURATION,
     DOMAIN,
+    LEGACY_NAME,
     MODE_BOOST,
     MODE_SETBACK,
     SOURCE_AUTOMATION,
+    NAME,
     SERVICE_START,
     SERVICE_START_SETBACK,
     SERVICE_STOP,
@@ -194,6 +196,11 @@ async def async_migrate_entry(
             ):
                 registry.async_remove(entity_id)
         hass.config_entries.async_update_entry(entry, minor_version=4)
+    if entry.version == 1 and entry.minor_version < 5:
+        # 2.0.0 renamed the project to Heat Flex; the device follows the
+        # entry title. Entity IDs and the domain stay.
+        title = NAME if entry.title == LEGACY_NAME else entry.title
+        hass.config_entries.async_update_entry(entry, title=title, minor_version=5)
     return True
 
 

@@ -1,7 +1,8 @@
-# Solar Floor Boost: integration guide
+# Heat Flex: integration guide
 
 A self-contained reference for writing Home Assistant automations, scripts,
-templates and dashboards that use the Solar Floor Boost integration. Paste it
+templates and dashboards that use the Heat Flex integration (called Solar
+Floor Boost up to 1.10; the domain `solar_floor_boost` stayed). Paste it
 into an LLM prompt or read it instead of the source. Entity IDs below are the
 defaults; a user may have renamed them, and Home Assistant 2026.11+ may
 prefix new IDs with the device's area (e.g. `switch.living_room_solar_floor_boost_boost`).
@@ -23,7 +24,7 @@ prefix new IDs with the device's area (e.g. `switch.living_room_solar_floor_boos
   Manual changes win: a thermostat whose target was changed by someone else
   during the session is left as is at the end.
 - One instance per Home Assistant; all entities belong to one device
-  "Solar Floor Boost".
+  "Heat Flex".
 
 ## Entities
 
@@ -172,29 +173,30 @@ the switch to `on` plus a template condition on its `automation` attribute
 Two ready-made cards (no resources to add; the integration registers them):
 
 ```yaml
-type: custom:solar-floor-boost-card          # switches with hints, Amount, Duration presets, end times
-title: Floor heating                         # optional
+type: custom:heat-flex-card                  # switches with hints, Amount, Duration presets, end times
+title: Heating                               # optional
 end_format: relative                         # optional
 ```
 
 ```yaml
-type: custom:solar-floor-boost-history-card  # sessions on a timeline, tooltip per block
-title: Floor heating today                   # optional
+type: custom:heat-flex-history-card          # sessions on a timeline, tooltip per block
+title: Heating today                         # optional
 span: today                                  # optional: today (calendar days) or rolling (ends now)
 days: 1                                      # optional, span today, 1–14
 hours: 24                                    # optional, span rolling, 1–336
 ```
 
-`custom:solar-floor-boost-history-24h-card` is the same card preset to a
-rolling 24-hour window.
+`custom:heat-flex-history-24h-card` is the same card preset to a rolling
+24-hour window. The `custom:solar-floor-boost-*` types from before 2.0 are
+aliases of these.
 
-Rows usable in any entities card: `custom:solar-floor-boost-switch-row`
-(`entity`, `name`, `hint`) and `custom:solar-floor-boost-duration-row`
+Rows usable in any entities card: `custom:heat-flex-switch-row`
+(`entity`, `name`, `hint`) and `custom:heat-flex-duration-row`
 (`entity`, `name`).
 
 ## Configuration
 
-Settings → Devices & services → Solar Floor Boost → Configure: the
+Settings → Devices & services → Heat Flex → Configure: the
 thermostats (`climate_entities`), the maximum boosted target
 (`max_temperature`) and the minimum setback target (`min_temperature`).
 There is no YAML configuration.

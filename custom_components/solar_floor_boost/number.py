@@ -81,11 +81,14 @@ async def async_setup_entry(
 
 class BoostNumber(BoostEntity, RestoreNumber):
     entity_description: BoostNumberDescription
+    _platform_domain = "number"
 
     def __init__(
         self, manager: BoostManager, description: BoostNumberDescription
     ) -> None:
-        super().__init__(manager, description.key)
+        # "delta" is named Amount; the entity ID follows the name.
+        object_id = "amount" if description.key == "delta" else description.key
+        super().__init__(manager, description.key, object_id)
         self.entity_description = description
 
     async def async_added_to_hass(self) -> None:

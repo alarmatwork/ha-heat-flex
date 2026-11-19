@@ -1,11 +1,14 @@
-// Solar Floor Boost dashboard card: an entities card preconfigured with the
-// integration's entities. Shows up under "By card" in the card picker.
+// Heat Flex dashboard cards: an entities card preconfigured with the
+// integration's entities, and a history timeline. They show up under "By
+// card" in the card picker. The integration's domain keeps the original name
+// (solar_floor_boost); the custom:solar-floor-boost-* card types from before
+// 2.0 keep working as aliases.
 
 const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "1.10.0";
+const CARD_VERSION = "2.0.0";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -64,7 +67,7 @@ function startedBy(attributes) {
 
 function switchRow(ids, mode) {
   return {
-    type: "custom:solar-floor-boost-switch-row",
+    type: "custom:heat-flex-switch-row",
     entity: ids[mode],
     name: ROWS[mode][1],
     hint: HINTS[mode],
@@ -93,17 +96,17 @@ function runningVersion(hass, ids) {
 function entitiesCardConfig(config, ids, staleVersion) {
   return {
     type: "entities",
-    title: config.title ?? "Floor heating",
+    title: config.title ?? "Heating",
     show_header_toggle: false,
     entities: [
       ...(staleVersion
-        ? [{ type: "custom:solar-floor-boost-reload-row", version: staleVersion }]
+        ? [{ type: "custom:heat-flex-reload-row", version: staleVersion }]
         : []),
       switchRow(ids, "boost"),
       switchRow(ids, "setback"),
       { entity: ids.delta, name: ROWS.delta[1] },
       {
-        type: "custom:solar-floor-boost-duration-row",
+        type: "custom:heat-flex-duration-row",
         entity: ids.duration,
         name: ROWS.duration[1],
       },
@@ -113,9 +116,9 @@ function entitiesCardConfig(config, ids, staleVersion) {
   };
 }
 
-class SolarFloorBoostCard extends HTMLElement {
+class HeatFlexCard extends HTMLElement {
   static getStubConfig() {
-    return { title: "Floor heating" };
+    return { title: "Heating" };
   }
 
   setConfig(config) {
@@ -195,7 +198,7 @@ class SolarFloorBoostCard extends HTMLElement {
 const RELOAD_KEY = "solar_floor_boost_reloaded_for";
 
 // Notice row shown when the integration is newer than this file.
-class SolarFloorBoostReloadRow extends HTMLElement {
+class HeatFlexReloadRow extends HTMLElement {
   setConfig(config) {
     this._config = config;
     const style = document.createElement("style");
@@ -222,7 +225,7 @@ class SolarFloorBoostReloadRow extends HTMLElement {
     icon.setAttribute("icon", "mdi:update");
     const text = Object.assign(document.createElement("span"), {
       className: "text",
-      textContent: `Solar Floor Boost was updated to ${config.version}. Reload the page to get the new card.`,
+      textContent: `Heat Flex was updated to ${config.version}. Reload the page to get the new card.`,
     });
     const button = Object.assign(document.createElement("button"), {
       type: "button",
@@ -242,10 +245,10 @@ class SolarFloorBoostReloadRow extends HTMLElement {
 // Toggle row with an (i) that explains when to use the mode. Hover shows the
 // hint on desktop; a tap toggles it on touch screens. Usable in any entities
 // card:
-//   - type: custom:solar-floor-boost-switch-row
+//   - type: custom:heat-flex-switch-row
 //     entity: switch.solar_floor_boost_boost
 //     hint: Use when ...
-class SolarFloorBoostSwitchRow extends HTMLElement {
+class HeatFlexSwitchRow extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("entity is required");
     this._config = config;
@@ -373,9 +376,9 @@ function nearestPreset(minutes) {
 
 // Slider row for the duration number entity: one evenly spaced step per
 // preset and a "1h 30m" label. Usable in any entities card:
-//   - type: custom:solar-floor-boost-duration-row
+//   - type: custom:heat-flex-duration-row
 //     entity: number.solar_floor_boost_boost_duration
-class SolarFloorBoostDurationRow extends HTMLElement {
+class HeatFlexDurationRow extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("entity is required");
     this._config = config;
@@ -442,16 +445,16 @@ class SolarFloorBoostDurationRow extends HTMLElement {
 // did, a "now" marker, and a tooltip per block with who started it, the
 // amount and the times. Data comes from the recorder's history of the two
 // switches, whose attributes say who started each session.
-//   type: custom:solar-floor-boost-history-card
-//   title: Floor heating today   # optional
+//   type: custom:heat-flex-history-card
+//   title: Heating today         # optional
 //   span: today                  # optional: today (calendar days) or rolling (a window ending now)
 //   days: 1                      # optional, span today: 1 = today, 2 = since yesterday, ...
 //   hours: 24                    # optional, span rolling: how far back the window reaches
-// custom:solar-floor-boost-history-24h-card is the same card with span rolling.
+// custom:heat-flex-history-24h-card is the same card with span rolling.
 
 const HISTORY_COLORS = {
-  boost: "var(--solar-floor-boost-boost-color, var(--error-color, #db4437))",
-  setback: "var(--solar-floor-boost-setback-color, var(--info-color, #4285f4))",
+  boost: "var(--heat-flex-boost-color, var(--solar-floor-boost-boost-color, var(--error-color, #db4437)))",
+  setback: "var(--heat-flex-setback-color, var(--solar-floor-boost-setback-color, var(--info-color, #4285f4)))",
 };
 const HOUR = 3600000;
 
@@ -484,9 +487,9 @@ function startedByLine(attributes) {
     : `${who} (${attributes.command})`;
 }
 
-class SolarFloorBoostHistoryCard extends HTMLElement {
+class HeatFlexHistoryCard extends HTMLElement {
   static getStubConfig() {
-    return { title: "Floor heating today" };
+    return { title: "Heating today" };
   }
 
   setConfig(config) {
@@ -573,7 +576,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
       .tip[hidden] { display: none; }
     `;
     const card = document.createElement("ha-card");
-    card.header = this._config.title ?? "Floor heating today";
+    card.header = this._config.title ?? "Heating today";
     this._content = Object.assign(document.createElement("div"), { className: "content" });
     this._svgHost = document.createElement("div");
     this._legend = Object.assign(document.createElement("div"), { className: "legend" });
@@ -836,9 +839,9 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
 }
 
 // Picker entry for the rolling window: the history card with span rolling.
-class SolarFloorBoostHistory24hCard extends SolarFloorBoostHistoryCard {
+class HeatFlexHistory24hCard extends HeatFlexHistoryCard {
   static getStubConfig() {
-    return { title: "Floor heating, last 24 h" };
+    return { title: "Heating, last 24 h" };
   }
 
   setConfig(config) {
@@ -863,19 +866,25 @@ async function whenAppReady(timeoutMs = 60000) {
 
 function register() {
   const registry = window.customElements;
-  if (!registry.get("solar-floor-boost-duration-row")) {
-    registry.define("solar-floor-boost-duration-row", SolarFloorBoostDurationRow);
+  const define = (name, cls) => {
+    if (!registry.get(name)) registry.define(name, cls);
+  };
+  const elements = {
+    "heat-flex-duration-row": HeatFlexDurationRow,
+    "heat-flex-switch-row": HeatFlexSwitchRow,
+    "heat-flex-reload-row": HeatFlexReloadRow,
+    "heat-flex-card": HeatFlexCard,
+    "heat-flex-history-card": HeatFlexHistoryCard,
+    "heat-flex-history-24h-card": HeatFlexHistory24hCard,
+  };
+  const already = registry.get("heat-flex-card");
+  for (const [name, cls] of Object.entries(elements)) {
+    define(name, cls);
+    // Names from before 2.0 (Solar Floor Boost), so dashboards keep working.
+    // A class can be registered once, hence the subclass.
+    define(name.replace("heat-flex", "solar-floor-boost"), class extends cls {});
   }
-  if (!registry.get("solar-floor-boost-switch-row")) {
-    registry.define("solar-floor-boost-switch-row", SolarFloorBoostSwitchRow);
-  }
-  if (!registry.get("solar-floor-boost-reload-row")) {
-    registry.define("solar-floor-boost-reload-row", SolarFloorBoostReloadRow);
-  }
-  if (registry.get("solar-floor-boost-card")) return;
-  registry.define("solar-floor-boost-card", SolarFloorBoostCard);
-  registry.define("solar-floor-boost-history-card", SolarFloorBoostHistoryCard);
-  registry.define("solar-floor-boost-history-24h-card", SolarFloorBoostHistory24hCard);
+  if (already) return;
   window.customCards = window.customCards || [];
   // HA 2026.6+: offer the cards in "By entity" for any of our entities.
   const suggest = (label, type) => (hass, entityId) =>
@@ -884,24 +893,24 @@ function register() {
       : null;
   window.customCards.push(
     {
-      type: "solar-floor-boost-card",
-      name: "Solar Floor Boost",
-      description: "Boost or set back the floor heating: amount, duration, and when it ends.",
+      type: "heat-flex-card",
+      name: "Heat Flex",
+      description: "Boost or set back the heating: amount, duration, and when it ends.",
       preview: true,
-      getEntitySuggestion: suggest("Solar Floor Boost", "solar-floor-boost-card"),
+      getEntitySuggestion: suggest("Heat Flex", "heat-flex-card"),
       documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost",
     },
     {
-      type: "solar-floor-boost-history-card",
-      name: "Solar Floor Boost History",
+      type: "heat-flex-history-card",
+      name: "Heat Flex History",
       description: "Today's boosts (red) and setbacks (blue) on a timeline; each block shows who started it, the amount and the times.",
       preview: true,
-      getEntitySuggestion: suggest("Solar Floor Boost History", "solar-floor-boost-history-card"),
+      getEntitySuggestion: suggest("Heat Flex History", "heat-flex-history-card"),
       documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
     },
     {
-      type: "solar-floor-boost-history-24h-card",
-      name: "Solar Floor Boost History (last 24 h)",
+      type: "heat-flex-history-24h-card",
+      name: "Heat Flex History (last 24 h)",
       description: "The same timeline for the last 24 hours, ending now.",
       preview: true,
       documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",

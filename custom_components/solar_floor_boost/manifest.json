@@ -1,6 +1,6 @@
 {
   "domain": "solar_floor_boost",
-  "name": "Solar Floor Boost",
+  "name": "Heat Flex",
   "after_dependencies": [
     "frontend",
     "http"
@@ -22,5 +22,5 @@
   "issue_tracker": "https://github.com/alarmatwork/ha-solar-floor-boost/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.10.0"
+  "version": "2.0.0"
 }

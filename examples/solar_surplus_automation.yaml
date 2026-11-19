@@ -1,4 +1,4 @@
-# Solar surplus -> raise floor heating (requires the Solar Floor Boost integration)
+# Solar surplus -> raise floor heating (requires the Heat Flex integration)
 # Paste into Settings > Automations > Create > ⋮ > Edit in YAML, then replace
 # the sensor entity IDs with your own (see the README).
 alias: "Solar surplus - boost floor heating"

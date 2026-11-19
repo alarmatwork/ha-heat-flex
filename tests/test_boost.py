@@ -186,7 +186,7 @@ async def test_upgrade_from_1_4_0(hass: HomeAssistant):
     registry.async_get_or_create("select", DOMAIN, f"{entry.entry_id}_duration", config_entry=entry)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
     assert registry.async_get_entity_id("select", DOMAIN, f"{entry.entry_id}_duration") is None
     assert registry.async_get(number.entity_id).hidden_by is None
     assert hass.states.get(number.entity_id).state == "2.0"
@@ -387,7 +387,7 @@ async def test_upgrade_from_1_7_0_removes_setback_numbers(hass: HomeAssistant):
         registry.async_get_or_create("number", DOMAIN, f"{entry.entry_id}_{key}", config_entry=entry)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 4
+    assert entry.minor_version == 5
     for key in ("setback_delta", "setback_duration"):
         assert registry.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_{key}") is None
     assert hass.states.get(AMOUNT).state == "1.0"
@@ -496,9 +496,11 @@ async def test_card_version_matches_manifest_and_device(hass: HomeAssistant):
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
     assert device.sw_version == manifest
     # Both ready-made cards are defined and offered in the card picker.
-    for card_type in ("solar-floor-boost-card", "solar-floor-boost-history-card", "solar-floor-boost-history-24h-card"):
-        assert f'registry.define("{card_type}"' in card
-        assert f'type: "{card_type}"' in card
+    for card_type in ("heat-flex-card", "heat-flex-history-card", "heat-flex-history-24h-card"):
+        assert f'"{card_type}": ' in card and f'type: "{card_type}"' in card
+    # Names from before the rename keep working, but are not offered twice.
+    assert 'name.replace("heat-flex", "solar-floor-boost")' in card
+    assert 'type: "solar-floor-boost-card"' not in card
 
 
 BOOST_ENDS, SETBACK_ENDS = "sensor.solar_floor_boost_boost_ends", "sensor.solar_floor_boost_setback_ends"
@@ -587,3 +589,25 @@ async def test_start_info_survives_reload(hass: HomeAssistant):
     after = hass.states.get(BOOST).attributes
     assert {k: after[k] for k in EMPTY_START} == {k: before[k] for k in EMPTY_START}
     assert after["automation"] == "Solar surplus"
+
+
+async def test_upgrade_renames_entry_to_heat_flex(hass: HomeAssistant):
+    """2.0.0: an entry still titled Solar Floor Boost is renamed; a custom title is kept."""
+    from homeassistant.helpers import device_registry as dr
+
+    entry = MockConfigEntry(domain=DOMAIN, title="Solar Floor Boost", minor_version=4, options={"climate_entities": [A], "max_temperature": 28})
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, "climate", {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == 5 and entry.title == "Heat Flex"
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert device.name == "Heat Flex"
+    # Entity IDs keep the domain name.
+    assert hass.states.get(BOOST) is not None
+
+    custom = MockConfigEntry(domain=DOMAIN, title="Upstairs heating", minor_version=4, options={"climate_entities": [A]})
+    custom.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(custom.entry_id)
+    await hass.async_block_till_done()
+    assert custom.title == "Upstairs heating" and custom.minor_version == 5

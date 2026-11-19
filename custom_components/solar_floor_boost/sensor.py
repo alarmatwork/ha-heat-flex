@@ -32,8 +32,10 @@ class EndSensor(BoostEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:timer-sand"
 
+    _platform_domain = "sensor"
+
     def __init__(self, manager: BoostManager, mode: str) -> None:
-        super().__init__(manager, f"{mode}_end")
+        super().__init__(manager, f"{mode}_end", f"{mode}_ends")
         self._mode = mode
 
     @property

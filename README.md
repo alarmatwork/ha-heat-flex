@@ -1,21 +1,32 @@
-# Solar Floor Boost
+# Heat Flex
 
-A Home Assistant integration that temporarily raises (**Boost**) or lowers
-(**Setback**) the target temperature of selected thermostats, then puts each
-one back to the target it had before.
+Shift your heating in time. A Home Assistant integration that temporarily
+raises (**Boost**) or lowers (**Setback**) the target temperature of selected
+thermostats, then puts each one back to the target it had before. Heat the
+house a little more when energy is cheap or plentiful, a little less when it
+is expensive or scarce, and let the building's thermal mass carry the
+difference. Underfloor heating is the ideal case, but any `climate` entity
+works.
 
 - **Boost** when you have more energy than you need: the battery is full and
-  the sun is still producing, or electricity is cheap right now. Instead of
-  exporting the surplus, store it as heat in the floor by raising every
-  thermostat by 1 °C for 2 hours.
+  the sun is still producing, electricity is cheap right now, or an expensive
+  hour is coming and you want to preheat. Instead of exporting the surplus,
+  store it as heat by raising every thermostat by 1 °C for 2 hours.
 - **Setback** when energy is scarce or expensive: a price peak, a low battery,
-  or a grid alert. Lower every thermostat by 1 °C for 2 hours and let the floor
-  coast.
+  or a grid alert. Lower every thermostat by 1 °C for 2 hours and let the
+  house coast on the heat already in it.
 
 Both use the same **Amount** and **Duration** settings. Only one of the two
 runs at a time; starting one ends the other. Control them from the UI, or
-start them from automations with your own conditions (battery level, PV
-power, electricity price, outdoor temperature, ...).
+start them from automations with your own conditions (electricity price,
+battery level, PV power, outdoor temperature, ...). Every start is recorded,
+so you can always see which automation did what and when.
+
+> Heat Flex was called **Solar Floor Boost** up to version 1.10. The
+> integration's domain, entity IDs and action names keep that name
+> (`solar_floor_boost`), on existing and on new installs, so nothing changes
+> in automations and dashboards after the update, and examples work for
+> everyone.
 
 Temperatures follow your Home Assistant unit system: with Fahrenheit the
 amount is in °F (default 2 °F, whole degrees) and so are the limits (defaults
@@ -34,12 +45,12 @@ degree lower, and go back to their own targets when it ends:
 
 [![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alarmatwork&repository=ha-solar-floor-boost&category=integration)
 
-Settings → **Marketplace** → search for **Solar Floor Boost** (or click the
+Settings → **Marketplace** → search for **Heat Flex** (or click the
 badge above). Install it, then restart Home Assistant.
 
 ### HACS (Home Assistant 2026.10 or older)
 
-HACS → search for **Solar Floor Boost** (or click the badge above). Install
+HACS → search for **Heat Flex** (or click the badge above). Install
 it, then restart Home Assistant.
 
 ### Manual
@@ -49,7 +60,7 @@ Copy `custom_components/solar_floor_boost` to
 
 ### Setup
 
-Settings → Devices & services → **Add integration** → **Solar Floor Boost**.
+Settings → Devices & services → **Add integration** → **Heat Flex**.
 Pick the thermostats, a maximum boosted target (safety cap, default 28 °C) and
 a minimum setback target (safety floor, default 15 °C). You can change them
 later via **Configure**.
@@ -73,14 +84,14 @@ the device's area.
 ## Dashboard card
 
 The integration ships the card shown above. Edit dashboard → **Add card**
-→ **By card** (or **Browse all cards**) → **Solar Floor Boost**. On Home
+→ **By card** (or **Browse all cards**) → **Heat Flex**. On Home
 Assistant 2026.6+ it is also suggested under **By entity** (Community section)
-when you pick any Solar Floor Boost entity. The ⓘ next to each switch explains
+when you pick any Heat Flex entity. The ⓘ next to each switch explains
 when to use that mode (hover, or tap on a phone).
 
 ```yaml
-type: custom:solar-floor-boost-card
-title: Floor heating   # optional
+type: custom:heat-flex-card
+title: Heating         # optional
 end_format: relative   # optional: relative, time, datetime, ...
 ```
 
@@ -88,20 +99,20 @@ If you prefer a plain entities card that you can customise:
 
 ```yaml
 type: entities
-title: Floor heating boost
+title: Heating
 show_header_toggle: false
 entities:
-  - type: custom:solar-floor-boost-switch-row  # toggle with an ⓘ hint
+  - type: custom:heat-flex-switch-row  # toggle with an ⓘ hint
     entity: switch.solar_floor_boost_boost
     name: Boost
     hint: Use when the battery is full or electricity is cheap.
-  - type: custom:solar-floor-boost-switch-row
+  - type: custom:heat-flex-switch-row
     entity: switch.solar_floor_boost_setback
     name: Setback
     hint: Use when electricity is expensive or the battery is low.
   - entity: number.solar_floor_boost_amount
     name: Amount
-  - type: custom:solar-floor-boost-duration-row  # preset slider (15m … 12h)
+  - type: custom:heat-flex-duration-row  # preset slider (15m … 12h)
     entity: number.solar_floor_boost_duration
     name: Duration
   - type: conditional
@@ -128,27 +139,30 @@ A second ready-made card draws the day as a timeline: red blocks while a
 boost ran, blue while a setback did, and a "now" marker. Hover or tap a block
 and it tells who started that session, the amount, the start and end time,
 and the fields the caller gave. Edit dashboard → **Add card** →
-**Solar Floor Boost History**.
+**Heat Flex History**.
 
 ```yaml
-type: custom:solar-floor-boost-history-card
-title: Floor heating today  # optional
+type: custom:heat-flex-history-card
+title: Heating today        # optional
 span: today                 # optional: today (calendar days) or rolling (a window ending now)
 days: 1                     # optional, span today: 1 = today, 2 = since yesterday, ... up to 14
 hours: 24                   # optional, span rolling: how far back, up to 336
 ```
 
-Two flavours are in the card picker: **Solar Floor Boost History** shows the
-current day from midnight, with the "now" marker moving along; **Solar Floor
-Boost History (last 24 h)** shows a rolling window that ends now, so what
+Two flavours are in the card picker: **Heat Flex History** shows the
+current day from midnight, with the "now" marker moving along; **Heat Flex
+History (last 24 h)** shows a rolling window that ends now, so what
 happened last evening is still on it in the morning. Both are the same card;
-the second one is `custom:solar-floor-boost-history-24h-card`, which just
+the second one is `custom:heat-flex-history-24h-card`, which just
 presets `span: rolling` and `hours: 24`.
+
+Card types from before 2.0 (`custom:solar-floor-boost-card` and the
+others) keep working as aliases.
 
 The card reads the recorder's history of the two switches, so it needs the
 recorder (on by default) and shows sessions as far back as it keeps data.
 Colours follow the theme's `--error-color` and `--info-color`; override them
-with `--solar-floor-boost-boost-color` and `--solar-floor-boost-setback-color`
+with `--heat-flex-boost-color` and `--heat-flex-setback-color`
 in a theme.
 
 ## Actions
@@ -387,7 +401,7 @@ moves the targets down instead of up.
 self-contained description of the integration: entities, actions and their
 fields, attributes, rules, and the recommended automation patterns. Paste it
 into the prompt (or point the assistant at the file) when you ask an LLM to
-write automations, scripts or dashboards for Solar Floor Boost; it has
+write automations, scripts or dashboards for Heat Flex; it has
 everything needed without reading the code.
 
 ## Development

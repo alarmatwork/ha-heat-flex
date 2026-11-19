@@ -13,7 +13,8 @@ repo = "ha-solar-floor-boost"
 header = """
 # Changelog
 
-What changed in each version of Solar Floor Boost. Generated from the
+What changed in each version of Heat Flex (Solar Floor Boost up to 1.10).
+Generated from the
 commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 

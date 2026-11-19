@@ -29,8 +29,10 @@ async def async_setup_entry(
 class ModeSwitch(BoostEntity, SwitchEntity):
     """On while the mode runs. Turning one on turns the other off."""
 
+    _platform_domain = "switch"
+
     def __init__(self, manager: BoostManager, mode: str) -> None:
-        super().__init__(manager, mode)
+        super().__init__(manager, mode, mode)
         self._mode = mode
         self._attr_icon = ICONS[mode]
 
