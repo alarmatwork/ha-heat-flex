@@ -178,10 +178,15 @@ end_format: relative                         # optional
 ```
 
 ```yaml
-type: custom:solar-floor-boost-history-card  # today's sessions on a timeline, tooltip per block
+type: custom:solar-floor-boost-history-card  # sessions on a timeline, tooltip per block
 title: Floor heating today                   # optional
-days: 1                                      # optional, 1–14
+span: today                                  # optional: today (calendar days) or rolling (ends now)
+days: 1                                      # optional, span today, 1–14
+hours: 24                                    # optional, span rolling, 1–336
 ```
+
+`custom:solar-floor-boost-history-24h-card` is the same card preset to a
+rolling 24-hour window.
 
 Rows usable in any entities card: `custom:solar-floor-boost-switch-row`
 (`entity`, `name`, `hint`) and `custom:solar-floor-boost-duration-row`

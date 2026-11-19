@@ -5,7 +5,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "1.9.2";
+const CARD_VERSION = "1.10.0";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -444,7 +444,10 @@ class SolarFloorBoostDurationRow extends HTMLElement {
 // switches, whose attributes say who started each session.
 //   type: custom:solar-floor-boost-history-card
 //   title: Floor heating today   # optional
-//   days: 1                      # optional: 1 = today, 2 = since yesterday, ...
+//   span: today                  # optional: today (calendar days) or rolling (a window ending now)
+//   days: 1                      # optional, span today: 1 = today, 2 = since yesterday, ...
+//   hours: 24                    # optional, span rolling: how far back the window reaches
+// custom:solar-floor-boost-history-24h-card is the same card with span rolling.
 
 const HISTORY_COLORS = {
   boost: "var(--solar-floor-boost-boost-color, var(--error-color, #db4437))",
@@ -488,10 +491,22 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
+    this._rolling = this._config.span === "rolling";
     this._days = Math.max(1, Math.min(14, Number(this._config.days) || 1));
+    this._hours = Math.max(1, Math.min(14 * 24, Number(this._config.hours) || 24));
     this._periods = undefined;
     this._fetched = 0;
     this._render();
+  }
+
+  // The time window shown: calendar days from local midnight, or a rolling
+  // window that ends now.
+  _window() {
+    if (this._rolling) {
+      const span = this._hours * HOUR;
+      return { start: Date.now() - span, span };
+    }
+    return { start: midnight(this._days - 1).getTime(), span: this._days * 24 * HOUR };
   }
 
   set hass(hass) {
@@ -585,14 +600,13 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     const hass = this._hass;
     const ids = this._ids;
     this._fetched = Date.now();
-    const start = midnight(this._days - 1);
-    const end = new Date(start.getTime() + this._days * 24 * HOUR);
+    const { start, span } = this._window();
     let result;
     try {
       result = await hass.callWS({
         type: "history/history_during_period",
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(start + span).toISOString(),
         entity_ids: [ids.boost, ids.setback],
         include_start_time_state: true,
         significant_changes_only: false,
@@ -632,8 +646,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     if (!this._hass || !this._svgHost) return;
     this._drawn = Date.now();
     const width = this._content.clientWidth || 300;
-    const start = midnight(this._days - 1).getTime();
-    const span = this._days * 24 * HOUR;
+    const { start, span } = this._window();
     const now = Date.now();
     const left = 8;
     const right = 8;
@@ -654,17 +667,25 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
       return node;
     };
 
-    // Axis with a tick every 4 hours (every 12 for several days).
+    // Axis with a tick every 4 hours (6 or 12 for longer windows), on round
+    // clock hours; a rolling window starts at an odd minute.
     el("line", { class: "axis", x1: left, x2: left + plotW, y1: axisY, y2: axisY });
-    const tickEvery = (this._days > 2 ? 12 : this._days > 1 ? 6 : 4) * HOUR;
-    const fmt = timeFormatter(this._hass, this._days > 1);
-    for (let t = start + tickEvery; t < start + span; t += tickEvery) {
+    const tickHours = span > 48 * HOUR ? 12 : span > 24 * HOUR ? 6 : 4;
+    const withDate = span > 24 * HOUR;
+    const fmt = timeFormatter(this._hass, withDate);
+    const firstTick = new Date(start);
+    firstTick.setMinutes(0, 0, 0);
+    let t = firstTick.getTime();
+    while (t <= start || new Date(t).getHours() % tickHours !== 0) t += HOUR;
+    for (; t < start + span; t += tickHours * HOUR) {
+      // The last tick would collide with the "now" tag at the right edge.
+      if (this._rolling && start + span - t < HOUR) break;
       el("line", { class: "tick", x1: x(t), x2: x(t), y1: axisY, y2: axisY + 8 });
       el("text", { class: "label", x: x(t), y: axisY + 28, "text-anchor": "middle" }, fmt.format(new Date(t)));
     }
 
     // Blocks.
-    const timeFmt = timeFormatter(this._hass, this._days > 1);
+    const timeFmt = timeFormatter(this._hass, withDate);
     for (const period of this._periods || []) {
       const from = Math.max(period.from, start);
       const to = Math.min(period.to ?? now, start + span);
@@ -748,7 +769,11 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     if (empty && !this._empty) {
       this._empty = Object.assign(document.createElement("div"), {
         className: "empty",
-        textContent: this._days > 1 ? "No boost or setback in this period." : "No boost or setback yet today.",
+        textContent: this._rolling
+          ? `No boost or setback in the last ${this._hours} h.`
+          : this._days > 1
+            ? "No boost or setback in this period."
+            : "No boost or setback yet today.",
       });
       this._content.prepend(this._empty);
     } else if (!empty && this._empty) {
@@ -810,6 +835,17 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
   }
 }
 
+// Picker entry for the rolling window: the history card with span rolling.
+class SolarFloorBoostHistory24hCard extends SolarFloorBoostHistoryCard {
+  static getStubConfig() {
+    return { title: "Floor heating, last 24 h" };
+  }
+
+  setConfig(config) {
+    super.setConfig({ span: "rolling", hours: 24, ...(config || {}) });
+  }
+}
+
 // The frontend's app bundle installs a scoped custom element registry
 // polyfill that replaces window.customElements. This module is loaded in
 // parallel and can run first; elements defined on the old registry are then
@@ -839,6 +875,7 @@ function register() {
   if (registry.get("solar-floor-boost-card")) return;
   registry.define("solar-floor-boost-card", SolarFloorBoostCard);
   registry.define("solar-floor-boost-history-card", SolarFloorBoostHistoryCard);
+  registry.define("solar-floor-boost-history-24h-card", SolarFloorBoostHistory24hCard);
   window.customCards = window.customCards || [];
   // HA 2026.6+: offer the cards in "By entity" for any of our entities.
   const suggest = (label, type) => (hass, entityId) =>
@@ -860,6 +897,13 @@ function register() {
       description: "Today's boosts (red) and setbacks (blue) on a timeline; each block shows who started it, the amount and the times.",
       preview: true,
       getEntitySuggestion: suggest("Solar Floor Boost History", "solar-floor-boost-history-card"),
+      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
+    },
+    {
+      type: "solar-floor-boost-history-24h-card",
+      name: "Solar Floor Boost History (last 24 h)",
+      description: "The same timeline for the last 24 hours, ending now.",
+      preview: true,
       documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
     }
   );

@@ -133,8 +133,17 @@ and the fields the caller gave. Edit dashboard → **Add card** →
 ```yaml
 type: custom:solar-floor-boost-history-card
 title: Floor heating today  # optional
-days: 1                     # optional: 1 = today, 2 = since yesterday, ... up to 14
+span: today                 # optional: today (calendar days) or rolling (a window ending now)
+days: 1                     # optional, span today: 1 = today, 2 = since yesterday, ... up to 14
+hours: 24                   # optional, span rolling: how far back, up to 336
 ```
+
+Two flavours are in the card picker: **Solar Floor Boost History** shows the
+current day from midnight, with the "now" marker moving along; **Solar Floor
+Boost History (last 24 h)** shows a rolling window that ends now, so what
+happened last evening is still on it in the morning. Both are the same card;
+the second one is `custom:solar-floor-boost-history-24h-card`, which just
+presets `span: rolling` and `hours: 24`.
 
 The card reads the recorder's history of the two switches, so it needs the
 recorder (on by default) and shows sessions as far back as it keeps data.
