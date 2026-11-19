@@ -7,7 +7,7 @@
 
 [remote.github]
 owner = "alarmatwork"
-repo = "ha-solar-floor-boost"
+repo = "ha-heat-flex"
 
 [changelog]
 header = """

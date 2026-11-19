@@ -26,7 +26,9 @@ so you can always see which automation did what and when.
 > integration's domain, entity IDs and action names keep that name
 > (`solar_floor_boost`), on existing and on new installs, so nothing changes
 > in automations and dashboards after the update, and examples work for
-> everyone.
+> everyone. The repository moved from `ha-solar-floor-boost` to
+> `ha-heat-flex`; the old address redirects, and installs made through the
+> Marketplace or HACS follow the move on their own.
 
 Temperatures follow your Home Assistant unit system: with Fahrenheit the
 amount is in °F (default 2 °F, whole degrees) and so are the limits (defaults
@@ -43,7 +45,7 @@ degree lower, and go back to their own targets when it ends:
 
 ### Marketplace (Home Assistant 2026.11 or newer)
 
-[![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alarmatwork&repository=ha-solar-floor-boost&category=integration)
+[![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alarmatwork&repository=ha-heat-flex&category=integration)
 
 Settings → **Marketplace** → search for **Heat Flex** (or click the
 badge above). Install it, then restart Home Assistant.

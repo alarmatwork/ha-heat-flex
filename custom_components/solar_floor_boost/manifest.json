@@ -16,11 +16,11 @@
   "dependencies": [
     "climate"
   ],
-  "documentation": "https://github.com/alarmatwork/ha-solar-floor-boost",
+  "documentation": "https://github.com/alarmatwork/ha-heat-flex",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/alarmatwork/ha-solar-floor-boost/issues",
+  "issue_tracker": "https://github.com/alarmatwork/ha-heat-flex/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "2.0.0"
+  "version": "2.0.1"
 }

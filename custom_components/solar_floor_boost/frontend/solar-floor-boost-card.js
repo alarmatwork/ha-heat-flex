@@ -8,7 +8,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "2.0.0";
+const CARD_VERSION = "2.0.1";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -898,7 +898,7 @@ function register() {
       description: "Boost or set back the heating: amount, duration, and when it ends.",
       preview: true,
       getEntitySuggestion: suggest("Heat Flex", "heat-flex-card"),
-      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost",
+      documentationURL: "https://github.com/alarmatwork/ha-heat-flex",
     },
     {
       type: "heat-flex-history-card",
@@ -906,14 +906,14 @@ function register() {
       description: "Today's boosts (red) and setbacks (blue) on a timeline; each block shows who started it, the amount and the times.",
       preview: true,
       getEntitySuggestion: suggest("Heat Flex History", "heat-flex-history-card"),
-      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
+      documentationURL: "https://github.com/alarmatwork/ha-heat-flex#history-card",
     },
     {
       type: "heat-flex-history-24h-card",
       name: "Heat Flex History (last 24 h)",
       description: "The same timeline for the last 24 hours, ending now.",
       preview: true,
-      documentationURL: "https://github.com/alarmatwork/ha-solar-floor-boost#history-card",
+      documentationURL: "https://github.com/alarmatwork/ha-heat-flex#history-card",
     }
   );
 }
