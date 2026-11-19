@@ -5,6 +5,12 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [1.10.0](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.10.0) - 2026-11-19
+
+### Added
+
+- Add a rolling-window option to the history card and a 'Solar Floor Boost History (last 24 h)' card in the picker (1.10.0)
+
 ## [1.9.2](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.9.2) - 2026-11-19
 
 ### Fixed
