@@ -5,6 +5,12 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [1.9.2](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.9.2) - 2026-11-19
+
+### Fixed
+
+- Fix the history card tooltip on phones: the bar under the finger was redrawn away on every state update; a tooltip now shows while the finger rests on a bar, stays after a short tap, and a second tap or a scroll hides it (1.9.2)
+
 ## [1.9.1](https://github.com/alarmatwork/ha-solar-floor-boost/releases/tag/v1.9.1) - 2026-11-18
 
 ### Fixed
