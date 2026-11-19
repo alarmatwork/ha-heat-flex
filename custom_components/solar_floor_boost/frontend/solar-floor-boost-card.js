@@ -5,7 +5,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "1.9.1";
+const CARD_VERSION = "1.9.2";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -506,7 +506,9 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     );
     const stale = Date.now() - this._fetched > 60000;
     if (changed || stale) this._fetch();
-    else this._draw();
+    // hass updates arrive constantly; redrawing on each would replace the
+    // bar under a finger. The "now" marker only needs to move now and then.
+    else if (Date.now() - (this._drawn || 0) > 30000) this._draw();
   }
 
   connectedCallback() {
@@ -525,7 +527,10 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = `
       .content { padding: 0 16px 12px; }
-      svg { display: block; width: 100%; overflow: visible; }
+      svg {
+        display: block; width: 100%; overflow: visible;
+        user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+      }
       .axis { stroke: var(--secondary-text-color); stroke-width: 2; }
       .tick { stroke: var(--secondary-text-color); stroke-width: 2; }
       .label { fill: var(--primary-text-color); font-size: 14px; }
@@ -625,6 +630,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
 
   _draw() {
     if (!this._hass || !this._svgHost) return;
+    this._drawn = Date.now();
     const width = this._content.clientWidth || 300;
     const start = midnight(this._days - 1).getTime();
     const span = this._days * 24 * HOUR;
@@ -674,24 +680,46 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
         stroke: HISTORY_COLORS[period.mode],
         tabindex: 0,
       });
+      const key = `${period.mode}:${period.from}`;
+      rect.setAttribute("data-key", key);
       const text = this._describe(period, timeFmt);
-      const show = () => this._showTip(rect, text);
-      const toggle = () => (this._tip.hidden || this._tipFor !== rect ? show() : this._hideTip());
-      // A tap on a phone fires mouseenter and then click, so hover is for a
-      // real mouse only; a tap, a click or Enter toggles.
+      const show = () => this._showTip(rect, text, key);
+      const shown = () => !this._tip.hidden && this._tipFor === rect;
+      const toggle = () => (shown() ? this._hideTip() : show());
+      // Mouse: hover shows, click toggles.
       rect.addEventListener("pointerenter", (ev) => ev.pointerType === "mouse" && show());
       rect.addEventListener("pointerleave", (ev) => ev.pointerType === "mouse" && this._hideTip());
+      // Finger: shown while it rests on the bar. A short tap leaves it shown
+      // and a second tap hides it; lifting after a long press, or scrolling
+      // away, hides it. The click that follows a touch is ignored.
+      rect.addEventListener("pointerdown", (ev) => {
+        if (ev.pointerType === "mouse") return;
+        this._press = { rect, at: Date.now(), wasShown: shown() };
+        show();
+      });
+      const release = (ev) => {
+        if (ev.pointerType === "mouse" || this._press?.rect !== rect) return;
+        const { at, wasShown } = this._press;
+        this._press = undefined;
+        this._touched = Date.now();
+        if (ev.type === "pointercancel" || wasShown || Date.now() - at > 400) this._hideTip();
+      };
+      rect.addEventListener("pointerup", release);
+      rect.addEventListener("pointercancel", release);
       rect.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        if (Date.now() - (this._touched || 0) < 700) return;
         toggle();
       });
+      rect.addEventListener("contextmenu", (ev) => ev.preventDefault());
       rect.addEventListener("keydown", (ev) => {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
           toggle();
         }
       });
-      rect.addEventListener("blur", () => this._tipFor === rect && this._hideTip());
+      // Losing focus hides it, except when the bar was just redrawn.
+      rect.addEventListener("blur", () => rect.isConnected && shown() && this._hideTip());
     }
 
     // "now" marker, only inside the shown span.
@@ -705,6 +733,16 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     }
 
     this._svgHost.replaceChildren(svg);
+    // Keep an open tooltip on its bar across the redraw.
+    if (!this._tip.hidden && this._tipKey) {
+      const bar = svg.querySelector(`[data-key="${this._tipKey}"]`);
+      if (bar) {
+        this._tipFor = bar;
+        this._positionTip(bar);
+      } else {
+        this._hideTip();
+      }
+    }
     const empty = this._periods && !this._periods.length;
     this._legend.hidden = false;
     if (empty && !this._empty) {
@@ -739,10 +777,15 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
     return lines.join("\n");
   }
 
-  _showTip(anchor, text) {
+  _showTip(anchor, text, key) {
     this._tipFor = anchor;
+    this._tipKey = key;
     this._tip.textContent = text;
     this._tip.hidden = false;
+    this._positionTip(anchor);
+  }
+
+  _positionTip(anchor) {
     const r = anchor.getBoundingClientRect();
     const width = this._tip.offsetWidth;
     const height = this._tip.offsetHeight;
@@ -755,6 +798,7 @@ class SolarFloorBoostHistoryCard extends HTMLElement {
   _hideTip() {
     this._tip.hidden = true;
     this._tipFor = undefined;
+    this._tipKey = undefined;
   }
 
   getCardSize() {
