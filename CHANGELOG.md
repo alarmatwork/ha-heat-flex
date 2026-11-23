@@ -6,6 +6,12 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [2.1.0](https://github.com/alarmatwork/ha-heat-flex/releases/tag/v2.1.0) - 2026-11-23
+
+### Added
+
+- Add a 'Heat Flex Log' card: the sessions as a text log, newest first, with the amount, who started each one, when it was due to end and whether it was stopped early; the title opens the logbook for the two switches (2.1.0)
+
 ## [2.0.1](https://github.com/alarmatwork/ha-heat-flex/releases/tag/v2.0.1) - 2026-11-19
 
 ### Changed
