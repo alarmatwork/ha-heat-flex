@@ -1,5 +1,5 @@
 // Heat Flex dashboard cards: an entities card preconfigured with the
-// integration's entities, and a history timeline. They show up under "By
+// integration's entities, a history timeline and a text log. They show up under "By
 // card" in the card picker. The integration's domain keeps the original name
 // (solar_floor_boost); the custom:solar-floor-boost-* card types from before
 // 2.0 keep working as aliases.
@@ -8,7 +8,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "2.0.1";
+const CARD_VERSION = "2.1.0";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -599,6 +599,11 @@ class HeatFlexHistoryCard extends HTMLElement {
     this._card = card;
   }
 
+  // Further entities a subclass wants in the same history request.
+  _extraEntities() {
+    return [];
+  }
+
   async _fetch() {
     const hass = this._hass;
     const ids = this._ids;
@@ -610,7 +615,7 @@ class HeatFlexHistoryCard extends HTMLElement {
         type: "history/history_during_period",
         start_time: new Date(start).toISOString(),
         end_time: new Date(start + span).toISOString(),
-        entity_ids: [ids.boost, ids.setback],
+        entity_ids: [ids.boost, ids.setback, ...this._extraEntities()],
         include_start_time_state: true,
         significant_changes_only: false,
         minimal_response: false,
@@ -620,6 +625,7 @@ class HeatFlexHistoryCard extends HTMLElement {
       // Recorder disabled or an old frontend: show the live state at least.
       result = {};
     }
+    this._history = result;
     const periods = [];
     for (const mode of ["boost", "setback"]) {
       const entries = result[ids[mode]] || [];
@@ -849,6 +855,248 @@ class HeatFlexHistory24hCard extends HeatFlexHistoryCard {
   }
 }
 
+// Local midnight of the day ``t`` falls in.
+function dayStart(t) {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Text log of the sessions in the window, newest first, like the Activity
+// list on the device page, but each line says the amount, who started the
+// session, when it was due to end and how it ended.
+//   type: custom:heat-flex-log-card
+//   title: Heating log      # optional
+//   span / days / hours     # the window, as for the history card (default: 2 days)
+//   max: 30                 # optional: at most this many lines
+//   ended: true             # optional: false lists only the starts
+class HeatFlexLogCard extends HeatFlexHistoryCard {
+  static getStubConfig() {
+    return { title: "Heating log" };
+  }
+
+  setConfig(config) {
+    super.setConfig({ days: 2, ...(config || {}) });
+    this._max = Math.max(1, Math.min(200, Number(this._config.max) || 30));
+    this._showEnded = this._config.ended !== false;
+  }
+
+  // The "ends" sensors: their value at the start of a session is the planned
+  // end, which tells whether the session was stopped early.
+  _extraEntities() {
+    return [this._ids.boost_end, this._ids.setback_end];
+  }
+
+  _render() {
+    const style = document.createElement("style");
+    style.textContent = `
+      .head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px 0 16px; cursor: pointer;
+      }
+      .head h1 {
+        margin: 0; font-size: var(--ha-card-header-font-size, 24px);
+        font-weight: var(--ha-card-header-font-weight, 400);
+        color: var(--ha-card-header-color, var(--primary-text-color));
+        line-height: 1.5;
+      }
+      .head ha-icon { color: var(--secondary-text-color); }
+      .content { padding: 4px 16px 12px; }
+      .day {
+        color: var(--primary-text-color); font-weight: 500; font-size: 14px;
+        padding: 8px 0 4px;
+      }
+      .row {
+        display: flex; align-items: flex-start; gap: 12px;
+        padding: 8px 0; cursor: pointer; border-bottom: 1px solid var(--divider-color);
+      }
+      .row:last-child { border-bottom: none; }
+      .row:hover { background: var(--secondary-background-color); }
+      .mark { display: flex; flex-direction: column; align-items: center; align-self: stretch; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--disabled-color, #9e9e9e); }
+      .dot.on { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 30%, transparent); }
+      .text { flex: 1; min-width: 0; }
+      .primary { color: var(--primary-text-color); font-size: 14px; }
+      .secondary { color: var(--secondary-text-color); font-size: 12px; line-height: 1.4; }
+      .time { color: var(--secondary-text-color); font-size: 12px; white-space: nowrap; margin-top: 1px; }
+      .empty { color: var(--secondary-text-color); font-size: 14px; padding: 8px 0 4px; }
+    `;
+    const card = document.createElement("ha-card");
+    const head = Object.assign(document.createElement("div"), { className: "head" });
+    const title = Object.assign(document.createElement("h1"), {
+      textContent: this._config.title ?? "Heating log",
+    });
+    const chevron = document.createElement("ha-icon");
+    chevron.setAttribute("icon", "mdi:chevron-right");
+    head.append(title, chevron);
+    head.title = "Open in the logbook";
+    head.addEventListener("click", () => this._openLogbook());
+    this._content = Object.assign(document.createElement("div"), { className: "content" });
+    this._list = document.createElement("div");
+    this._content.append(this._list);
+    card.append(style, head, this._content);
+    this.replaceChildren(card);
+    this._card = card;
+  }
+
+  // The logbook panel, filtered to the two switches over the same window.
+  _openLogbook() {
+    const { start, span } = this._window();
+    const ids = this._ids || {};
+    const params = new URLSearchParams({
+      entity_id: [ids.boost, ids.setback].filter(Boolean).join(","),
+      start_date: new Date(start).toISOString(),
+      end_date: new Date(Math.min(start + span, Date.now())).toISOString(),
+    });
+    history.pushState(null, "", `/logbook?${params}`);
+    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+  }
+
+  // When the session was due to end: the "ends" sensor's value right after
+  // the start, else start plus the duration the caller gave.
+  _plannedEnd(period) {
+    const entries = this._history?.[this._ids[`${period.mode}_end`]] || [];
+    let planned;
+    for (const entry of entries) {
+      const at = (entry.lc ?? entry.lu) * 1000;
+      if (at > period.from + 5000) break;
+      const t = Date.parse(entry.s);
+      planned = Number.isNaN(t) ? undefined : t;
+    }
+    if (planned && planned > period.from) return planned;
+    const minutes = Number(period.attributes?.parameters?.duration);
+    return minutes > 0 ? period.from + minutes * 60000 : undefined;
+  }
+
+  _draw() {
+    if (!this._hass || !this._list) return;
+    this._drawn = Date.now();
+    const { start, span } = this._window();
+    const end = start + span;
+    const events = [];
+    for (const period of this._periods || []) {
+      const planned = this._plannedEnd(period);
+      if (period.from >= start && period.from < end) {
+        events.push({ at: period.from, kind: "start", period, planned });
+      }
+      if (this._showEnded && period.to && period.to >= start && period.to < end) {
+        events.push({ at: period.to, kind: "end", period, planned });
+      }
+    }
+    events.sort((a, b) => b.at - a.at);
+    const shown = events.slice(0, this._max);
+
+    const lang = this._hass.locale?.language || undefined;
+    const timeFmt = timeFormatter(this._hass, false);
+    const dateFmt = new Intl.DateTimeFormat(lang, { dateStyle: "long" });
+    const unit = this._hass.config?.unit_system?.temperature || "";
+    const today = dayStart(Date.now());
+    const nodes = [];
+    let day;
+    for (const ev of shown) {
+      const evDay = dayStart(ev.at);
+      if (evDay !== day) {
+        day = evDay;
+        const rel =
+          evDay === today ? "Today" : evDay === today - 24 * HOUR ? "Yesterday" : undefined;
+        const label = dateFmt.format(new Date(evDay));
+        nodes.push(
+          Object.assign(document.createElement("div"), {
+            className: "day",
+            textContent: rel ? `${rel} · ${label}` : label,
+          })
+        );
+      }
+      nodes.push(this._row(ev, timeFmt, unit));
+    }
+    if (!shown.length && this._periods) {
+      nodes.push(
+        Object.assign(document.createElement("div"), {
+          className: "empty",
+          textContent: this._rolling
+            ? `No boost or setback in the last ${this._hours} h.`
+            : this._days > 1
+              ? "No boost or setback in this period."
+              : "No boost or setback yet today.",
+        })
+      );
+    }
+    this._list.replaceChildren(...nodes);
+  }
+
+  _row(ev, timeFmt, unit) {
+    const { period, kind, planned } = ev;
+    const a = period.attributes || {};
+    const name = period.mode === "setback" ? "Setback" : "Boost";
+    const running = !period.to;
+    const parts = [];
+    if (kind === "start") {
+      const sign = period.mode === "setback" ? "−" : "+";
+      if (a.delta != null) parts.push(`${sign}${a.delta} ${unit}`.trimEnd());
+      if (planned) {
+        parts.push(`${formatDuration((planned - period.from) / 60000)} until ${timeFmt.format(new Date(planned))}`);
+      }
+      const who = startedBy(a);
+      if (who) {
+        const by = who.replace(/^Started /, "");
+        parts.push(a.started_by === "automation" && a.command ? `${by} (${a.command})` : by);
+      }
+      const extra = Object.entries(a.parameters || {}).filter(
+        ([k]) => k !== "delta" && k !== "duration"
+      );
+      for (const [k, v] of extra) parts.push(`${k}: ${Array.isArray(v) ? v.join(", ") : v}`);
+    } else {
+      parts.push(`after ${formatDuration((period.to - period.from) / 60000)}`);
+      if (planned && period.to < planned - 60000) {
+        parts.push(`stopped early, was due at ${timeFmt.format(new Date(planned))}`);
+      }
+    }
+    const row = Object.assign(document.createElement("div"), { className: "row" });
+    const mark = Object.assign(document.createElement("div"), { className: "mark" });
+    const dot = Object.assign(document.createElement("i"), { className: "dot" });
+    if (kind === "start") {
+      dot.style.background = HISTORY_COLORS[period.mode];
+      dot.style.color = HISTORY_COLORS[period.mode];
+      if (running) dot.classList.add("on");
+    }
+    mark.append(dot);
+    const text = Object.assign(document.createElement("div"), { className: "text" });
+    text.append(
+      Object.assign(document.createElement("div"), {
+        className: "primary",
+        textContent: kind === "start" ? `${name} started${running ? " (running)" : ""}` : `${name} ended`,
+      }),
+      Object.assign(document.createElement("div"), {
+        className: "secondary",
+        textContent: parts.join(" · "),
+      })
+    );
+    const time = Object.assign(document.createElement("div"), {
+      className: "time",
+      textContent: timeFmt.format(new Date(ev.at)),
+    });
+    row.append(mark, text, time);
+    row.addEventListener("click", () =>
+      this.dispatchEvent(
+        new CustomEvent("hass-more-info", {
+          bubbles: true,
+          composed: true,
+          detail: { entityId: this._ids[period.mode] },
+        })
+      )
+    );
+    return row;
+  }
+
+  getCardSize() {
+    return 1 + Math.min(this._max, 8);
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6 };
+  }
+}
+
 // The frontend's app bundle installs a scoped custom element registry
 // polyfill that replaces window.customElements. This module is loaded in
 // parallel and can run first; elements defined on the old registry are then
@@ -876,6 +1124,7 @@ function register() {
     "heat-flex-card": HeatFlexCard,
     "heat-flex-history-card": HeatFlexHistoryCard,
     "heat-flex-history-24h-card": HeatFlexHistory24hCard,
+    "heat-flex-log-card": HeatFlexLogCard,
   };
   const already = registry.get("heat-flex-card");
   for (const [name, cls] of Object.entries(elements)) {
@@ -914,6 +1163,14 @@ function register() {
       description: "The same timeline for the last 24 hours, ending now.",
       preview: true,
       documentationURL: "https://github.com/alarmatwork/ha-heat-flex#history-card",
+    },
+    {
+      type: "heat-flex-log-card",
+      name: "Heat Flex Log",
+      description: "Text log of the boosts and setbacks, newest first: amount, who started each one, when it was due to end and how it ended.",
+      preview: true,
+      getEntitySuggestion: suggest("Heat Flex Log", "heat-flex-log-card"),
+      documentationURL: "https://github.com/alarmatwork/ha-heat-flex#log-card",
     }
   );
 }

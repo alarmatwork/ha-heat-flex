@@ -495,8 +495,13 @@ async def test_card_version_matches_manifest_and_device(hass: HomeAssistant):
     entry, calls = await _setup(hass)
     device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.entry_id)})
     assert device.sw_version == manifest
-    # Both ready-made cards are defined and offered in the card picker.
-    for card_type in ("heat-flex-card", "heat-flex-history-card", "heat-flex-history-24h-card"):
+    # All ready-made cards are defined and offered in the card picker.
+    for card_type in (
+        "heat-flex-card",
+        "heat-flex-history-card",
+        "heat-flex-history-24h-card",
+        "heat-flex-log-card",
+    ):
         assert f'"{card_type}": ' in card and f'type: "{card_type}"' in card
     # Names from before the rename keep working, but are not offered twice.
     assert 'name.replace("heat-flex", "solar-floor-boost")' in card

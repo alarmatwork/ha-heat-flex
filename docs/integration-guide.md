@@ -170,7 +170,7 @@ the switch to `on` plus a template condition on its `automation` attribute
 
 ## Dashboards
 
-Two ready-made cards (no resources to add; the integration registers them):
+Three ready-made cards (no resources to add; the integration registers them):
 
 ```yaml
 type: custom:heat-flex-card                  # switches with hints, Amount, Duration presets, end times
@@ -186,8 +186,18 @@ days: 1                                      # optional, span today, 1–14
 hours: 24                                    # optional, span rolling, 1–336
 ```
 
-`custom:heat-flex-history-24h-card` is the same card preset to a rolling
-24-hour window. The `custom:solar-floor-boost-*` types from before 2.0 are
+```yaml
+type: custom:heat-flex-log-card              # text log, newest first: amount, who started it, planned end, how it ended
+title: Heating log                           # optional
+span: today                                  # optional, as for the history card (default 2 days)
+days: 2                                      # optional, span today, 1–14
+hours: 24                                    # optional, span rolling, 1–336
+max: 30                                      # optional, 1–200 lines
+ended: true                                  # optional, false lists only the starts
+```
+
+`custom:heat-flex-history-24h-card` is the same history card preset to a
+rolling 24-hour window. The `custom:solar-floor-boost-*` types from before 2.0 are
 aliases of these.
 
 Rows usable in any entities card: `custom:heat-flex-switch-row`
