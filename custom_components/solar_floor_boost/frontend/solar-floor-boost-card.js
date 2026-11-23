@@ -8,7 +8,7 @@ const DOMAIN = "solar_floor_boost";
 // Must match manifest.json (a test checks). The device's sw_version is the
 // version that is running; when it is newer, this file is stale in the
 // browser and the card asks for a reload.
-const CARD_VERSION = "2.1.0";
+const CARD_VERSION = "2.1.1";
 
 // translation_key -> [default entity_id, row name]. Amount and duration are
 // shared by both modes (installs from before 1.7.1 have them as
@@ -868,7 +868,7 @@ function dayStart(t) {
 //   type: custom:heat-flex-log-card
 //   title: Heating log      # optional
 //   span / days / hours     # the window, as for the history card (default: 2 days)
-//   max: 30                 # optional: at most this many lines
+//   max: 10                 # optional: how many lines (records) to show, 1-200
 //   ended: true             # optional: false lists only the starts
 class HeatFlexLogCard extends HeatFlexHistoryCard {
   static getStubConfig() {
@@ -877,7 +877,7 @@ class HeatFlexLogCard extends HeatFlexHistoryCard {
 
   setConfig(config) {
     super.setConfig({ days: 2, ...(config || {}) });
-    this._max = Math.max(1, Math.min(200, Number(this._config.max) || 30));
+    this._max = Math.max(1, Math.min(200, Number(this._config.max) || 10));
     this._showEnded = this._config.ended !== false;
   }
 

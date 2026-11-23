@@ -192,7 +192,7 @@ title: Heating log                           # optional
 span: today                                  # optional, as for the history card (default 2 days)
 days: 2                                      # optional, span today, 1–14
 hours: 24                                    # optional, span rolling, 1–336
-max: 30                                      # optional, 1–200 lines
+max: 10                                      # optional, how many lines to show, 1–200
 ended: true                                  # optional, false lists only the starts
 ```
 

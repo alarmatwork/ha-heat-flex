@@ -168,8 +168,9 @@ the device page but with the details that list lacks: each start line says
 the amount, how long the session was due to run and until when, and who
 started it (manually, or the automation that named itself); each end line
 says how long the session ran and whether it was stopped before its planned
-end. Tap a line for the switch's history, or the title to open the logbook
-filtered to the two switches. Edit dashboard → **Add card** → **Heat Flex
+end. The newest 10 lines are shown; `max` sets how many. Tap a line for
+the switch's history, or the title to open the logbook filtered to the two
+switches. Edit dashboard → **Add card** → **Heat Flex
 Log**.
 
 ```yaml
@@ -178,7 +179,7 @@ title: Heating log          # optional
 span: today                 # optional: today (calendar days) or rolling (a window ending now)
 days: 2                     # optional, span today: 1 = today, 2 = since yesterday, ... up to 14
 hours: 24                   # optional, span rolling: how far back, up to 336
-max: 30                     # optional: at most this many lines
+max: 10                     # optional: how many lines (records) to show, 1-200
 ended: true                 # optional: false lists only the starts
 ```
 
