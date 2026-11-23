@@ -6,6 +6,12 @@ commit history when a version is released; the same text is shown as the
 release notes in Home Assistant's Marketplace and HACS.
 
 
+## [2.1.1](https://github.com/alarmatwork/ha-heat-flex/releases/tag/v2.1.1) - 2026-11-23
+
+### Changed
+
+- Log card: show the newest 10 lines by default; 'max' sets how many (2.1.1)
+
 ## [2.1.0](https://github.com/alarmatwork/ha-heat-flex/releases/tag/v2.1.0) - 2026-11-23
 
 ### Added
